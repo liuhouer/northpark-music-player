@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>NorthPark 本地音乐播放器</title>
+    <link rel="stylesheet" href="../node_modules/bootstrap/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.8.1/css/all.css" integrity="sha384-50oBUHEmvpQ+1lW4y57PTFmhCaXp0ML5d60M1M7uH2+nqUivzIebhndOJK28anvf" crossorigin="anonymous">
+    <link rel="stylesheet" href="./index.css">
+  </head>
+  <body>
+    <div class="container mt-4">
+<!--      <h1>我的播放器</h1>-->
+
+      <div class="row">
+        <button type="button" id="add-music-button" class="btn btn-primary btn-lg  col-8">
+          添加歌曲到曲库
+        </button>
+          <button type="button" id="previous-button" class="btn btn-primary btn-lg  col-2">
+            <i class="fas fa-backward"></i>
+          </button>
+          <button type="button" id="next-button" class="btn btn-primary btn-lg  col-2">
+            <i class="fas fa-forward"></i>
+          </button>
+      </div>
+
+      <div id="tracksList" class="mt-4" style="margin-bottom: 100px;">
+      </div>
+
+    </div>
+    <div class="container fixed-bottom bg-white pb-4">
+      <hr/>
+      <div class="row my-2" id="player-status">
+      </div>
+<!--        <div id="lyrics-container" class="col">-->
+<!--            <p id="current-lyric"></p>-->
+<!--        </div>-->
+      <div class="progress" id="progress-bar">
+        <div class="progress-bar bg-success" id="player-progress" role="progressbar" style="width: 0% ;">
+          0%
+        </div>
+      </div>
+
+    </div>
+    <script>
+      require('./index.js')
+    </script>
+  </body>
+</html>

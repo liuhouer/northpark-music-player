@@ -1,0 +1,23 @@
+#tracksList .col-2 .fas:hover {
+  cursor: pointer;
+}
+
+#player-progress :hover{
+  cursor: pointer;
+}
+
+.fixed-bottom {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 999; /* 提高进度条的层级 */
+}
+
+#tracksList {
+  max-height: 400px; /* 设置歌曲列表的最大高度 */
+  overflow-y: auto; /* 添加垂直滚动条 */
+}
+
+.progress {
+  margin-top: 10px; /* 调整进度条与播放器状态之间的间距 */
+}

@@ -1,4 +1,4 @@
-# Simple music player
+# northpark-music-player
 
 **本项目使用 Electron 完成了一个简单的本地音乐播放器**
 
