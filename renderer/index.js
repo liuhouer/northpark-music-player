@@ -135,7 +135,7 @@ musicAudio.addEventListener('timeupdate', () => {
 // 我们添加了一个ended事件的监听器。
 // 当歌曲播放完成时触发该事件，我们通过找到当前歌曲在allTracks数组中的索引，计算出下一首歌曲的索引。
 // 然后，使用下一首歌曲的路径更新musicAudio对象的src属性，并调用play()方法开始播放下一首歌曲。
-musicAudio.addEventListener('ended', () => {
+musicAudio.addEventListener('ended', async () => {
   // 歌曲播放完成后的逻辑
   const currentIndex = allTracks.findIndex(track => track.id === currentTrack.id)
   const nextIndex = (currentIndex + 1) % allTracks.length
@@ -143,13 +143,22 @@ musicAudio.addEventListener('ended', () => {
   musicAudio.src = currentTrack.path
   musicAudio.play()
 
-  //加载歌词
-  loadLrc();
-
+  // 还原上次播放图标
   const resetIconEle = document.querySelector('.fa-pause')
+  console.log("下一曲resetIconEle",resetIconEle);
   if (resetIconEle) {
     resetIconEle.classList.replace('fa-pause', 'fa-play')
   }
+
+  // 替换最新播放图标
+  const tracksList = document.getElementById('tracksList');
+  const currentTrackElement = tracksList.querySelector(`[data-id="${currentTrack.id}"]`);
+  if (currentTrackElement) {
+    currentTrackElement.classList.replace('fa-play', 'fa-pause');
+  }
+
+  //加载歌词
+  await loadLrc();
   renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
 })
 
