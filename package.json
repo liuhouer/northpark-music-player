@@ -1,14 +1,20 @@
 {
-  "name": "simple-music-player",
+  "name": "northpark-music-player",
+  "productName": "NorthparkMusicPlayer",
   "version": "1.0.0",
   "description": "A minimal Electron application",
+  "copyright": "northpark.cn",
+  "author": {
+    "name": "Jeey Snow",
+    "email": "jeeysnow@foxmail.com"
+  },
   "main": "main.js",
   "scripts": {
     "start": "nodemon --watch main.js --exec \"electron .\"",
     "dist": "build"
   },
   "build": {
-    "appId": "simpleMusicPlayer",
+    "appId": "NorthparkMusicPlayer",
     "mac": {
       "category": "public.app-category.productivity"
     },
@@ -41,19 +47,32 @@
       ]
     },
     "win": {
-      "target": "squirrel",
-      "icon": "build/icon.ico"
+      "target": [
+        {
+          "target": "msi",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        }
+      ],
+      "icon": "build/icon256.ico",
+      "publisherName": "northpark.cn"
+    },
+    "msi": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     }
+
   },
   "repository": "https://github.com/electron/electron-quick-start",
   "keywords": [
     "Electron",
-    "quick",
-    "start",
-    "tutorial",
-    "demo"
+    "NorthparkMusicPlayer",
+    "Desktop app",
+    "player",
+    "NorthPark",
+    "music"
   ],
-  "author": "Viking Zhang",
   "license": "CC0-1.0",
   "devDependencies": {
     "electron": "^30.0.5",

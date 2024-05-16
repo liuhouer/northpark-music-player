@@ -22,4 +22,7 @@ npm start
 npm run dist
 ```
 
+
+## ico图标256 *256 ;size <=50kb
+
 # northpark-music-player

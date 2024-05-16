@@ -30,6 +30,7 @@ class AppWindow extends BrowserWindow {
     this.once('ready-to-show', () => {
       this.show()
     })
+    this.setMenu(null); // 移除菜单栏
   }
 }
 
@@ -80,6 +81,7 @@ app.on('ready', () => {
       }
     })
   })
+
 
 
 
