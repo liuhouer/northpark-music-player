@@ -22,3 +22,35 @@
 .progress {
   margin-top: 10px; /* 调整进度条与播放器状态之间的间距 */
 }
+
+
+/* 添加 CSS 样式来定义歌词的滚动效果 */
+.lyric-text {
+  white-space: nowrap;
+  overflow: hidden;
+  width: 100%;
+  display: inline-block;
+}
+
+.lyric-text span {
+  display: inline-block;
+  animation: scrollText 10s linear infinite;
+}
+
+@keyframes scrollText {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes colorChange {
+  0% {
+    color: #eab05b;
+  }
+  100% {
+    color: #696666;
+  }
+}

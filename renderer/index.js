@@ -7,6 +7,7 @@ let musicAudio = new Audio()
 let allTracks
 let currentTrack
 let currentLyricIndex = 0 //用于跟踪当前歌词的索引。
+let currentLyricIndexAnimationDuration = 1  //用于跟踪当前歌词的动画时间
 
 let curLyrics //当前播放歌曲的歌词
 
@@ -47,7 +48,7 @@ const renderPlayerHTML = (name, duration) => {
                 </div>
                 
                 <div class="col-5">
-                <p id="current-lyric"></p>
+                <p id="current-lyric" class="lyric-text"></p>
                 </div>
 
 `
@@ -68,8 +69,9 @@ const updateProgressHTML = (currentTime, duration) => {
 
 //加载歌词
 const loadLrc = async ()=>{
+  currentLyricIndex = 0 //重置当前歌词索引
   const lyricsPath = currentTrack.path.replace('.mp3', '.lrc');
-  curLyrics =  await parseLyricsFile(lyricsPath);//拿到解析的歌词
+  return  await parseLyricsFile(lyricsPath);//拿到解析的歌词
   //console.log('拿到解析的歌词', curLyrics)
 }
 
@@ -90,47 +92,108 @@ musicAudio.addEventListener('loadedmetadata', async () => {
   renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
 
   //加载歌词
-  await loadLrc();
+  curLyrics = await loadLrc();
 
   //在这里调用updateProgressHTML函数
   updateProgressHTML(musicAudio.currentTime, musicAudio.duration);
 
 })
 
-//当音频播放进度更新时，调用updateProgressHTML函数更新播放进度的HTML代码。
+
+
+//当音频播放进度更新时，调用updateProgressHTML函数更新播放进度的HTML代码。-- 双行展示版
+// musicAudio.addEventListener('timeupdate', () => {
+//   //更新播放器状态
+//   updateProgressHTML(musicAudio.currentTime, musicAudio.duration)
+//
+//   //更新歌词的滚动显示：
+//   if(curLyrics && curLyrics.length) {
+//     const currentLyricElement = $('current-lyric');
+//     const currentTime = musicAudio.currentTime;
+//     let nextLyricIndex = currentLyricIndex + 1;
+//
+//     // 寻找下一句歌词的时间
+//     while (nextLyricIndex < curLyrics.length && curLyrics[nextLyricIndex].time <= currentTime) {
+//       nextLyricIndex++;
+//     }
+//
+//     // 更新当前歌词
+//     const currentLyricText = curLyrics[currentLyricIndex].text;
+//     const nextLyricText = curLyrics[nextLyricIndex] ? curLyrics[nextLyricIndex].text : '';
+//     const lyricDisplayText = currentLyricText + '<br>' + nextLyricText;
+//     currentLyricElement.innerHTML = lyricDisplayText;
+//
+//     // 滚动显示当前歌词
+//     currentLyricElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+//
+//     // 更新当前歌词索引
+//     if (nextLyricIndex > currentLyricIndex) {
+//       currentLyricIndex = nextLyricIndex - 1;
+//     }
+//
+//   }
+//
+//
+// })
+
+
+// 当音频播放进度更新时，调用 updateProgressHTML 函数更新播放进度的 HTML 代码。
 musicAudio.addEventListener('timeupdate', () => {
-  //更新播放器状态
-  updateProgressHTML(musicAudio.currentTime, musicAudio.duration)
+  // 更新播放器状态
+  updateProgressHTML(musicAudio.currentTime, musicAudio.duration);
 
- //更新歌词的滚动显示：
-    if(curLyrics && curLyrics.length) {
-      const currentLyricElement = $('current-lyric');
-      const currentTime = musicAudio.currentTime;
-      let nextLyricIndex = currentLyricIndex + 1;
+  // 更新歌词的滚动显示
+  if (curLyrics && curLyrics.length) {
+    const currentLyricElement = $('current-lyric');
+    const currentLyricTime = curLyrics[currentLyricIndex].time;
 
-      // 寻找下一句歌词的时间
-      while (nextLyricIndex < curLyrics.length && curLyrics[nextLyricIndex].time <= currentTime) {
-        nextLyricIndex++;
+
+
+    if (musicAudio.currentTime >= currentLyricTime) {
+      //currentLyricElement.textContent = curLyrics[currentLyricIndex].text;
+
+      //=============================================变色计算=======================================
+      // 在这里计算这句的延时--设置每个字母的颜色变化
+      try {
+        currentLyricIndexAnimationDuration = (curLyrics[currentLyricIndex+1].time - curLyrics[currentLyricIndex].time); // 动画持续时间，单位秒
+      } catch (exception) {
+        // 处理异常情况
+        currentLyricIndexAnimationDuration = musicAudio.duration - curLyrics[currentLyricIndex].time;
       }
 
-      // 更新当前歌词
-      const currentLyricText = curLyrics[currentLyricIndex].text;
-      const nextLyricText = curLyrics[nextLyricIndex] ? curLyrics[nextLyricIndex].text : '';
-      const lyricDisplayText = currentLyricText + '<br>' + nextLyricText;
+      // 构建当前歌词的 HTML 代码，每个字母都包裹在一个 <span> 元素中
+      const currentLyricHTML = curLyrics[currentLyricIndex].text
+          .split('')
+          .map((char, index) => `<span class="char-${index}">${char}</span>`)
+          .join('');
+
+      const nextLyricText = curLyrics[currentLyricIndex+1] ? curLyrics[currentLyricIndex+1].text : '';
+      const lyricDisplayText = currentLyricHTML + '<br>' + nextLyricText;
+
+      // 更新当前歌词的 HTML
       currentLyricElement.innerHTML = lyricDisplayText;
 
-      // 滚动显示当前歌词
-      currentLyricElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // 获取当前歌词中每个字母的 <span> 元素
+      const currentLyricLetters = currentLyricElement.querySelectorAll('span');
 
-      // 更新当前歌词索引
-      if (nextLyricIndex > currentLyricIndex) {
-        currentLyricIndex = nextLyricIndex - 1;
-      }
 
+      const letterDelay = currentLyricIndexAnimationDuration / currentLyricLetters.length; // 计算每个字母的延迟时间
+
+      currentLyricLetters.forEach((letter, index) => {
+        letter.style.animation = `colorChange ${currentLyricIndexAnimationDuration}s linear infinite`;
+        letter.style.animationDelay = `${index * letterDelay}s`;
+      });
+      //=============================================变色计算=======================================
+
+      currentLyricIndex++;
+      currentLyricElement.scrollIntoView({behavior: 'smooth', block: 'center'});
     }
+  }
 
 
-})
+});
+
+
 
 // 我们添加了一个ended事件的监听器。
 // 当歌曲播放完成时触发该事件，我们通过找到当前歌曲在allTracks数组中的索引，计算出下一首歌曲的索引。
@@ -140,6 +203,12 @@ musicAudio.addEventListener('ended', async () => {
   const currentIndex = allTracks.findIndex(track => track.id === currentTrack.id)
   const nextIndex = (currentIndex + 1) % allTracks.length
   currentTrack = allTracks[nextIndex]
+
+  renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
+
+  //加载歌词
+  curLyrics = await loadLrc();
+
   musicAudio.src = currentTrack.path
   musicAudio.play()
 
@@ -157,14 +226,13 @@ musicAudio.addEventListener('ended', async () => {
     currentTrackElement.classList.replace('fa-play', 'fa-pause');
   }
 
-  //加载歌词
-  await loadLrc();
-  renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
+
+
 })
 
 // 点击音乐列表中的播放图标或暂停图标时，根据图标状态进行音乐的播放或暂停，并更新图标状态。
 // 点击音乐列表中的垃圾桶图标时，通过ipcRenderer对象发送一个名为'delete-track'的事件，用于删除对应的音乐。
-$('tracksList').addEventListener('click', (event) => {
+$('tracksList').addEventListener('click', async (event) => {
   event.preventDefault()
   const { dataset, classList } = event.target
   const id = dataset && dataset.id
@@ -186,7 +254,7 @@ $('tracksList').addEventListener('click', (event) => {
     classList.replace('fa-play', 'fa-pause')
 
     //加载歌词
-    loadLrc();
+    curLyrics = await loadLrc();
   } else if (id && classList.contains('fa-pause')) {
     // 处理暂停逻辑
     musicAudio.pause()
@@ -198,7 +266,7 @@ $('tracksList').addEventListener('click', (event) => {
 })
 
 //上一曲
-$('previous-button').addEventListener('click', () => {
+$('previous-button').addEventListener('click', async () => {
   const currentIndex = allTracks.findIndex(track => track.id === currentTrack.id)
   const previousIndex = (currentIndex - 1 + allTracks.length) % allTracks.length
   currentTrack = allTracks[previousIndex]
@@ -220,7 +288,7 @@ $('previous-button').addEventListener('click', () => {
   }
 
   //加载歌词
-  loadLrc();
+  curLyrics = await loadLrc();
 
   renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
 
@@ -228,7 +296,7 @@ $('previous-button').addEventListener('click', () => {
 })
 
 //下一曲
-$('next-button').addEventListener('click', () => {
+$('next-button').addEventListener('click', async () => {
   const currentIndex = allTracks.findIndex(track => track.id === currentTrack.id)
   const nextIndex = (currentIndex + 1) % allTracks.length
   currentTrack = allTracks[nextIndex]
@@ -250,7 +318,7 @@ $('next-button').addEventListener('click', () => {
   }
 
   //加载歌词
-  loadLrc();
+  curLyrics = await loadLrc();
 
   renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
 })
