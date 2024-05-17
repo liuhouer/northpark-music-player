@@ -71,6 +71,11 @@ const loadLrc = async ()=>{
   //console.log('拿到解析的歌词', curLyrics)
 }
 
+// 判断 musicAudio 是否正在播放
+const isMusicPlaying = () => {
+  return !musicAudio.paused;
+};
+
 //通过ipcRenderer对象监听名为'getTracks'的事件。
 // 当接收到该事件时，将音乐数据赋值给allTracks变量，并调用renderListHTML函数渲染音乐列表的HTML代码。
 ipcRenderer.on('getTracks', (event, tracks) => {
@@ -82,11 +87,17 @@ ipcRenderer.on('getTracks', (event, tracks) => {
   renderListHTML(tracks)
 
   //刷新后，有正在播放的歌曲，改变歌曲播放图标
-  const tracksList = document.getElementById('tracksList');
-  const currentTrackElement = tracksList.querySelector(`[data-id="${currentTrack.id}"]`);
-  if (currentTrackElement) {
-    currentTrackElement.classList.replace('fa-play', 'fa-pause');
+  console.log("正在播放？" + isMusicPlaying())
+  console.log("currentTrack？" + currentTrack)
+  if(currentTrack && isMusicPlaying()){
+    const tracksList = document.getElementById('tracksList');
+    const currentTrackElement = tracksList.querySelector(`[data-id="${currentTrack.id}"]`);
+
+    if (currentTrackElement) {
+      currentTrackElement.classList.replace('fa-play', 'fa-pause');
+    }
   }
+
 
 })
 
