@@ -31,7 +31,7 @@ class AppWindow extends BrowserWindow {
       this.show()
     })
 
-    this.setMenu(null); // 移除菜单栏
+    //this.setMenu(null); // 移除菜单栏
   }
 }
 
@@ -99,7 +99,17 @@ app.on('ready', () => {
       mainWindow.focus();
     }
 
+
+
   })
+
+  // 监听'clean-tracks'事件，清空播放列表
+  ipcMain.on('clean-tracks', (event, tracks) => {
+    myStore.clear();
+    mainWindow.send('getTracks', [])
+  })
+
+
 
   // 监听'delete-track'事件，从数据存储中删除音乐，并发送更新后的音乐数据给主窗口
   ipcMain.on('delete-track', (event, id) => {
