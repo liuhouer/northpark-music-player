@@ -450,11 +450,11 @@ $('stop-button').addEventListener('click', () => {
 // 清空歌单按钮点击事件
 $('clean-list-button').addEventListener('click', () => {
   if(allTracks && allTracks.length){
+    $('stop-button').click();//停止播放
+
     allTracks = [] // 清空歌单数据
 
     renderListHTML(allTracks) // 重新渲染空的音乐列表
-
-    $('stop-button').click();//停止播放
 
     ipcRenderer.send('clean-tracks');//发送消息 清空缓存配置文件
   }

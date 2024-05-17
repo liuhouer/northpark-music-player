@@ -94,9 +94,10 @@ app.on('ready', () => {
     const updatedTracks = myStore.addTracks(tracks).getTracks()
     mainWindow.send('getTracks', updatedTracks)
 
+    mainWindow.focus();
+
     if (addWindowInstance !== null) {
       addWindowInstance.close(); // 关闭 addWindow 窗口
-      mainWindow.focus();
     }
 
 
@@ -105,10 +106,11 @@ app.on('ready', () => {
 
   // 监听'clean-tracks'事件，清空播放列表
   ipcMain.on('clean-tracks', (event, tracks) => {
-    myStore.clear();
-    mainWindow.send('getTracks', [])
+    console.log('监听到clean-tracks事件')
+    const updatedTracks = []
+    myStore.cleanTracks();
+    mainWindow.send('getTracks', updatedTracks)
   })
-
 
 
   // 监听'delete-track'事件，从数据存储中删除音乐，并发送更新后的音乐数据给主窗口
