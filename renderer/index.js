@@ -80,6 +80,14 @@ ipcRenderer.on('getTracks', (event, tracks) => {
   console.log('receive tracks', tracks)
 
   renderListHTML(tracks)
+
+  //刷新后，有正在播放的歌曲，改变歌曲播放图标
+  const tracksList = document.getElementById('tracksList');
+  const currentTrackElement = tracksList.querySelector(`[data-id="${currentTrack.id}"]`);
+  if (currentTrackElement) {
+    currentTrackElement.classList.replace('fa-play', 'fa-pause');
+  }
+
 })
 
 //当音频元数据加载完成时，调用renderPlayerHTML函数渲染播放器状态的HTML代码。

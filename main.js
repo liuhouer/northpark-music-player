@@ -31,7 +31,7 @@ class AppWindow extends BrowserWindow {
       this.show()
     })
 
-    //this.setMenu(null); // 移除菜单栏
+    this.setMenu(null); // 移除菜单栏
   }
 }
 
@@ -139,7 +139,6 @@ app.on('ready', () => {
     mainWindow.webContents.send('apply-dark-mode', isDarkMode);
 
   });
-
 
 
 
