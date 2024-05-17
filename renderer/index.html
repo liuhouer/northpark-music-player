@@ -6,20 +6,24 @@
     <link rel="stylesheet" href="../node_modules/bootstrap/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.8.1/css/all.css" integrity="sha384-50oBUHEmvpQ+1lW4y57PTFmhCaXp0ML5d60M1M7uH2+nqUivzIebhndOJK28anvf" crossorigin="anonymous">
     <link rel="stylesheet" href="./index.css">
+    <link rel="stylesheet" href="./dark.css">
   </head>
   <body>
     <div class="container mt-4">
 <!--      <h1>我的播放器</h1>-->
 
       <div class="row">
-        <button type="button" id="add-music-button" class="btn btn-primary btn-lg  col-8">
+        <button type="button" id="add-music-button" class="btn btn-primary btn-lg  col-6">
           添加歌曲到曲库
         </button>
-          <button type="button" id="previous-button" class="btn btn-outline-primary btn-lg  col-2">
+          <button type="button" id="previous-button" class="btn btn-outline-primary btn-lg  col-2" title="Previous">
             <i class="fas fa-backward"></i>
           </button>
-          <button type="button" id="next-button" class="btn btn-outline-primary btn-lg  col-2">
+          <button type="button" id="next-button" class="btn btn-outline-primary btn-lg  col-2" title="Next">
             <i class="fas fa-forward"></i>
+          </button>
+          <button type="button" id="dark-mode-button" class="btn btn-outline-primary btn-lg  col-2"  title="暗色模式">
+              <i class="fas fa-moon"></i>
           </button>
       </div>
 
@@ -27,7 +31,7 @@
       </div>
 
     </div>
-    <div class="container fixed-bottom bg-white pb-4">
+    <div id="player-info" class="container fixed-bottom bg-white pb-4">
       <hr/>
       <div class="row my-2" id="player-status">
       </div>

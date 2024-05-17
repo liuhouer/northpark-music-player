@@ -1,6 +1,6 @@
 
 //引入了Electron模块中的app、BrowserWindow、ipcMain和dialog对象，并引入了自定义的MusicDataStore模块。
-const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog ,nativeTheme } = require('electron')
 const DataStore = require('./renderer/MusicDataStore')
 
 
@@ -30,6 +30,7 @@ class AppWindow extends BrowserWindow {
     this.once('ready-to-show', () => {
       this.show()
     })
+
     this.setMenu(null); // 移除菜单栏
   }
 }
@@ -49,19 +50,55 @@ app.on('ready', () => {
     mainWindow.send('getTracks', myStore.getTracks())
   })
 
+
+  let addWindowInstance = null;
   // 监听'add-music-window'事件，创建添加音乐窗口实例
-  ipcMain.on('add-music-window', () => {
-    const addWindow = new AppWindow({
-      width: 500,
-      height: 400,
-      parent: mainWindow
-    }, './renderer/add.html')
+  ipcMain.on('add-music-window',(event, isDarkMode) => {
+    if (addWindowInstance === null) {
+      const addWindow = new BrowserWindow({
+        width: 500,
+        height: 400,
+        parent: mainWindow,
+        webPreferences: {
+          nodeIntegration: true
+        }
+      });
+
+      addWindow.loadFile('./renderer/add.html');
+
+      addWindow.once('ready-to-show', () => {
+        addWindow.show();
+        addWindowInstance = null; // 窗口关闭后将实例设为null
+      });
+
+      addWindow.on('closed', () => {
+        addWindowInstance = null; // 清空addWindowInstance
+      });
+
+      addWindowInstance = addWindow; // 设置addWindowInstance为当前打开的addWindow实例
+
+      // 在子窗口的webContents完成加载后，发送获取音乐数据的请求
+      addWindow.webContents.on('did-finish-load',() => {
+        addWindow.send('apply-dark-mode', isDarkMode);
+      })
+
+      addWindow.setMenu(null); // 移除菜单栏
+    }
+
+    console.log('add-music-window:::' + isDarkMode);
+
   })
 
   // 监听'add-tracks'事件，添加音乐到数据存储，并发送更新后的音乐数据给主窗口
   ipcMain.on('add-tracks', (event, tracks) => {
     const updatedTracks = myStore.addTracks(tracks).getTracks()
     mainWindow.send('getTracks', updatedTracks)
+
+    if (addWindowInstance !== null) {
+      addWindowInstance.close(); // 关闭 addWindow 窗口
+      mainWindow.focus();
+    }
+
   })
 
   // 监听'delete-track'事件，从数据存储中删除音乐，并发送更新后的音乐数据给主窗口
@@ -81,6 +118,16 @@ app.on('ready', () => {
       }
     })
   })
+
+
+  // 监听来自渲染进程的 toggle-dark-mode 消息
+  ipcMain.on('toggle-dark-mode', (event, isDarkMode) => {
+    // 在这里处理切换深色模式的逻辑
+    // 例如，通过窗口对象进行样式的修改
+    mainWindow.webContents.send('apply-dark-mode', isDarkMode);
+
+  });
+
 
 
 

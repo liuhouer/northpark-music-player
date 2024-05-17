@@ -11,10 +11,6 @@ let currentLyricIndexAnimationDuration = 1  //用于跟踪当前歌词的动画�
 
 let curLyrics //当前播放歌曲的歌词
 
-//"add-music-button"元素添加了一个点击事件监听器。当按钮被点击时，通过ipcRenderer对象发送一个名为'add-music-window'的事件，用于打开添加音乐窗口。
-$('add-music-button').addEventListener('click', () => {
-  ipcRenderer.send('add-music-window')
-})
 
 // 渲染音乐列表的HTML代码
 const renderListHTML = (tracks) => {
@@ -411,3 +407,46 @@ const parseLyrics = (lyricsText) => {
   console.log("时间+歌词", lyrics);
   return lyrics;
 };
+
+
+
+// 监听 Dark Mode 按钮的点击事件
+$('dark-mode-button').addEventListener('click', () => {
+  const body = document.body;
+
+  const icon = document.querySelector('#dark-mode-button i');
+
+  // 切换深色模式的 CSS 类
+  body.classList.toggle('dark-mode');
+
+  // 切换图标的类名
+  if (body.classList.contains('dark-mode')) {
+    icon.classList.remove('fa-moon');
+    icon.classList.add('fa-sun');
+    $('dark-mode-button').title = '亮色模式';
+  } else {
+    icon.classList.remove('fa-sun');
+    icon.classList.add('fa-moon');
+    $('dark-mode-button').title = '暗色模式';
+  }
+
+  // 在主进程中发送消息通知切换主题
+  ipcRenderer.send('toggle-dark-mode', body.classList.contains('dark-mode'));
+});
+
+//"add-music-button"元素添加了一个点击事件监听器。当按钮被点击时，通过ipcRenderer对象发送一个名为'add-music-window'的事件，用于打开添加音乐窗口。
+$('add-music-button').addEventListener('click', () => {
+  const body = document.body;
+  ipcRenderer.send('add-music-window', body.classList.contains('dark-mode'))
+})
+
+// 监听来自主进程的 apply-dark-mode 消息
+ipcRenderer.on('apply-dark-mode', (event, isDarkMode) => {
+  // 在这里根据 isDarkMode 变量应用深色模式的样式
+  const body = document.body;
+  if (isDarkMode) {
+    body.classList.add('dark-mode');
+  } else {
+    body.classList.remove('dark-mode');
+  }
+});

@@ -1,0 +1,19 @@
+/* 深色模式样式 */
+body.dark-mode {
+    background-color: #121212 !important;
+    color: #fff !important;
+}
+
+/* 深色模式样式 */
+body.dark-mode .list-group-item{
+    background-color: #121212 !important;
+    color: #fff !important;
+}
+
+
+/* 深色模式样式 */
+body.dark-mode .bg-white{
+    background-color: #121212 !important;
+    color: #fff !important;
+}
+
