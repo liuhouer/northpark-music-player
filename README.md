@@ -23,9 +23,9 @@ npm run dist
 ```
 
 
-## ico图标256 *256 ;size <=50kb
+--  ico图标256 *256 ;size <=50kb
 
-# northpark-music-player
+
 
 本地极简主义播放器1.0，支持歌词动态显示
 
