@@ -7,6 +7,7 @@ const DataStore = require('./renderer/MusicDataStore')
 //创建了一个名为myStore的DataStore实例，用于管理音乐数据。
 const myStore = new DataStore({'name': 'Music Data'})
 
+
 /**
  * 这是一个自定义的AppWindow类，继承自BrowserWindow类。
  */
@@ -21,7 +22,8 @@ class AppWindow extends BrowserWindow {
       width: 800,
       height: 600,
       webPreferences: {
-        nodeIntegration: true
+        nodeIntegration: true,
+        contextIsolation: false,
       }
     }
     const finalConfig = { ...basicConfig, ...config }
@@ -31,9 +33,10 @@ class AppWindow extends BrowserWindow {
       this.show()
     })
 
-    this.setMenu(null); // 移除菜单栏
+    //this.setMenu(null); // 移除菜单栏
   }
 }
+
 
 app.on('ready', () => {
   // 在 Electron 主进程中打印 app.getAppPath()
@@ -50,7 +53,6 @@ app.on('ready', () => {
     mainWindow.send('getTracks', myStore.getTracks())
   })
 
-
   let addWindowInstance = null;
   // 监听'add-music-window'事件，创建添加音乐窗口实例
   ipcMain.on('add-music-window',(event, isDarkMode) => {
@@ -60,22 +62,22 @@ app.on('ready', () => {
         height: 400,
         parent: mainWindow,
         webPreferences: {
-          nodeIntegration: true
+          nodeIntegration: true,
+          contextIsolation: false,
         }
       });
 
       addWindow.loadFile('./renderer/add.html');
 
+
       addWindow.once('ready-to-show', () => {
         addWindow.show();
-        addWindowInstance = null; // 窗口关闭后将实例设为null
+        addWindowInstance = addWindow; // 设置addWindowInstance为当前打开的addWindow实例
       });
 
       addWindow.on('closed', () => {
         addWindowInstance = null; // 清空addWindowInstance
       });
-
-      addWindowInstance = addWindow; // 设置addWindowInstance为当前打开的addWindow实例
 
       // 在子窗口的webContents完成加载后，发送获取音乐数据的请求
       addWindow.webContents.on('did-finish-load',() => {
@@ -112,7 +114,6 @@ app.on('ready', () => {
     mainWindow.send('getTracks', updatedTracks)
   })
 
-
   // 监听'delete-track'事件，从数据存储中删除音乐，并发送更新后的音乐数据给主窗口
   ipcMain.on('delete-track', (event, id) => {
     const updatedTracks = myStore.deleteTrack(id).getTracks()
@@ -120,16 +121,21 @@ app.on('ready', () => {
   })
 
   // 监听'open-music-file'事件，打开文件对话框选择音乐文件，并发送选中的文件给渲染进程
-  ipcMain.on('open-music-file', (event) => {
-    dialog.showOpenDialog({
-      properties: ['openFile', 'multiSelections'],
-      filters: [{ name: 'Music', extensions: ['mp3'] }]
-    }, (files) => {
-      if (files) {
-        event.sender.send('selected-file', files)
+  ipcMain.on('open-music-file', async (event) => {
+    try {
+      const result = await dialog.showOpenDialog({
+        properties: ['openFile', 'multiSelections'],
+        filters: [{ name: 'Music', extensions: ['mp3'] }]
+      });
+
+      if (!result.canceled && result.filePaths.length > 0) {
+        console.log('选了文件', result.filePaths);
+        event.sender.send('selected-file', result.filePaths);
       }
-    })
-  })
+    } catch (error) {
+      console.error('打开文件对话框时出错:', error);
+    }
+  });
 
 
   // 监听来自渲染进程的 toggle-dark-mode 消息

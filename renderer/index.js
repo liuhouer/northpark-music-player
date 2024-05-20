@@ -3,6 +3,10 @@
 //它还创建了一个Audio对象musicAudio用于播放音乐，以及用于存储音乐数据的变量allTracks和当前播放的音乐currentTrack。
 const { ipcRenderer } = require('electron')
 const { $, convertDuration } = require('./helper')
+
+//读取歌曲标签
+const jsmediatags = require('jsmediatags');
+
 let musicAudio = new Audio()
 let allTracks
 let currentTrack
@@ -36,14 +40,20 @@ const renderListHTML = (tracks) => {
 // 渲染播放器状态的HTML代码
 const renderPlayerHTML = (name, duration) => {
   const player = $('player-status')
-  const html = `<div class="col-4 font-weight-bold">
+  const html = `
+
+                <div class="col-1">
+                  <span ><img id="current-cover" src=""/></span>
+                </div>
+                
+                <div class="col-4 font-weight-bold">
                   正在播放：${name}
                 </div>
                 <div class="col-3">
                   <span id="current-seeker">00:00</span> / ${convertDuration(duration)}
                 </div>
                 
-                <div class="col-5">
+                <div class="col-4">
                 <p id="current-lyric" class="lyric-text"></p>
                 </div>
 
@@ -61,6 +71,48 @@ const updateProgressHTML = (currentTime, duration) => {
   const seeker = $('current-seeker')
   seeker.innerHTML = convertDuration(currentTime)
 
+}
+
+
+// 读取 MP3 文件的封面图像
+const readMP3Cover = async (filePath) => {
+  jsmediatags.read(filePath, {
+    onSuccess: function (tag) {
+      const { picture } = tag.tags;
+      if (picture) {
+        const base64String = arrayBufferToBase64(picture.data);
+        const coverImageSrc = `data:${picture.format};base64,${base64String}`;
+        // 这里可以使用 coverImageSrc 来展示或处理封面图像
+
+        $('current-cover').src = coverImageSrc;
+
+      }else{
+        $('current-cover').src = '../build/icon256.ico';
+      }
+    },
+    onError: function (error) {
+      console.error('Error reading MP3 tags:', error);
+    }
+  });
+};
+
+// 辅助函数：将 ArrayBuffer 转换为 Base64 字符串
+const arrayBufferToBase64 = (buffer) => {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return window.btoa(binary);
+};
+
+
+//加载封面
+const loadCover = async ()=>{
+  // 调用 readMP3Cover 函数来读取 MP3 文件的封面图像
+  const filePath = currentTrack.path;
+  readMP3Cover(filePath);
 }
 
 //加载歌词
@@ -111,6 +163,9 @@ musicAudio.addEventListener('loadedmetadata', async () => {
 
   //在这里调用updateProgressHTML函数
   updateProgressHTML(musicAudio.currentTime, musicAudio.duration);
+
+  //加载封面
+  loadCover();
 
 })
 
@@ -185,7 +240,7 @@ musicAudio.addEventListener('ended', async () => {
   renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
 
   //加载歌词
-  curLyrics = await loadLrc();
+  //curLyrics = await loadLrc();
 
   musicAudio.src = currentTrack.path
   musicAudio.play()
@@ -232,7 +287,8 @@ $('tracksList').addEventListener('click', async (event) => {
     classList.replace('fa-play', 'fa-pause')
 
     //加载歌词
-    curLyrics = await loadLrc();
+    //curLyrics = await loadLrc();
+
   } else if (id && classList.contains('fa-pause')) {
     // 处理暂停逻辑
     musicAudio.pause()
@@ -267,7 +323,7 @@ $('previous-button').addEventListener('click', async () => {
     }
 
     //加载歌词
-    curLyrics = await loadLrc();
+    //curLyrics = await loadLrc();
 
     renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
   }
@@ -299,7 +355,8 @@ $('next-button').addEventListener('click', async () => {
     }
 
     //加载歌词
-    curLyrics = await loadLrc();
+    //curLyrics = await loadLrc();
+
 
     renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
   }
