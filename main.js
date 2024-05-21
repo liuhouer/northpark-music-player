@@ -1,6 +1,6 @@
 
 //引入了Electron模块中的app、BrowserWindow、ipcMain和dialog对象，并引入了自定义的MusicDataStore模块。
-const { app, BrowserWindow, ipcMain, dialog ,nativeTheme } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog  } = require('electron')
 const DataStore = require('./renderer/MusicDataStore')
 
 
@@ -24,6 +24,7 @@ class AppWindow extends BrowserWindow {
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
+        webSecurity: false,
       }
     }
     const finalConfig = { ...basicConfig, ...config }
@@ -34,6 +35,7 @@ class AppWindow extends BrowserWindow {
     })
 
     //this.setMenu(null); // 移除菜单栏
+
   }
 }
 

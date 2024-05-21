@@ -7,6 +7,7 @@ const { $, convertDuration } = require('./helper')
 //读取歌曲标签
 const jsmediatags = require('jsmediatags');
 
+
 let musicAudio = new Audio()
 let allTracks
 let currentTrack
@@ -76,6 +77,7 @@ const updateProgressHTML = (currentTime, duration) => {
 
 // 读取 MP3 文件的封面图像
 const readMP3Cover = async (filePath) => {
+
   jsmediatags.read(filePath, {
     onSuccess: function (tag) {
       const { picture } = tag.tags;
@@ -87,7 +89,8 @@ const readMP3Cover = async (filePath) => {
         $('current-cover').src = coverImageSrc;
 
       }else{
-        $('current-cover').src = '../build/icon256.ico';
+        $('current-cover').src = '';
+
       }
     },
     onError: function (error) {
