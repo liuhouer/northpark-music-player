@@ -89,7 +89,7 @@ const readMP3Cover = async (filePath) => {
         $('current-cover').src = coverImageSrc;
 
       }else{
-        $('current-cover').src = '';
+        $('current-cover').src = 'defaultCover.ico';
 
       }
     },

@@ -40,6 +40,7 @@ class AppWindow extends BrowserWindow {
 }
 
 
+
 app.on('ready', () => {
   // 在 Electron 主进程中打印 app.getAppPath()
   console.log(app.getAppPath());
