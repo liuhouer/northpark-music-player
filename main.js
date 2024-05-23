@@ -40,8 +40,12 @@ class AppWindow extends BrowserWindow {
 }
 
 
+let lyricWindow = null; // 歌词窗口的引用
+
 
 app.on('ready', () => {
+
+
   // 在 Electron 主进程中打印 app.getAppPath()
   console.log(app.getAppPath());
 
@@ -146,6 +150,69 @@ app.on('ready', () => {
     // 在这里处理切换深色模式的逻辑
     // 例如，通过窗口对象进行样式的修改
     mainWindow.webContents.send('apply-dark-mode', isDarkMode);
+
+  });
+
+
+  // 监听来自桌面歌词窗口的关闭请求
+  ipcMain.on('closeLyricWindow', () => {
+    console.log('closeLyricWindow---->  lyricWindow states',lyricWindow);
+    if (lyricWindow) {
+      lyricWindow.close();
+    }
+    mainWindow.webContents.send('updateLyricWindowStatus', false);
+  });
+
+  // 监听来自桌面歌词窗口的打开
+  ipcMain.on('showLyricWindow',(event) => {
+    console.log('showLyricWindow---->   lyricWindow states',lyricWindow);
+    // 发送showLyricWindow事件给歌词窗口
+    if (!lyricWindow) {
+
+      const { screen } = require('electron');
+      // 获取屏幕的宽度和高度
+      const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+
+      // 创建歌词窗口
+      lyricWindow = new BrowserWindow({
+        width: 900,
+        height: 120,
+        x: (width - 900) / 2, // 将窗口水平居中
+        y: height - 120, // 将窗口设置在屏幕最下方
+        alwaysOnTop: true, // 窗口始终显示在最上层
+        transparent: true, // 设置窗口为透明
+        frame: false, // 移除窗口的边框
+        backgroundColor: '#000000E6', // 设置背景颜色透明度为90%
+        webPreferences: {
+          nodeIntegration: true, // 允许在窗口中使用Node.js API
+          contextIsolation: false,
+          webSecurity: false,
+        }
+      });
+
+
+      lyricWindow.setMenu(null); // 移除菜单栏
+
+      // 加载歌词窗口的HTML文件
+      lyricWindow.loadFile('./renderer/lyric.html');
+
+      // 当歌词窗口被关闭时将其引用置为空
+      lyricWindow.on('closed', () => {
+        lyricWindow = null;
+        mainWindow.webContents.send('updateLyricWindowStatus', false);
+      });
+
+    }
+    mainWindow.webContents.send('updateLyricWindowStatus', true);
+  });
+
+  // 监听更新桌面歌词
+  ipcMain.on('updateDeskLyric',(event,curLrc) => {
+
+
+    if(lyricWindow){
+      lyricWindow.send('updateDeskLc', curLrc)
+    }
 
   });
 

@@ -221,6 +221,9 @@ musicAudio.addEventListener('timeupdate', () => {
       });
       //=============================================变色计算=======================================
 
+      // 发送当前歌词给桌面歌词窗口
+      ipcRenderer.send('updateDeskLyric', currentLyricElement.innerHTML);
+
       currentLyricIndex++;
       currentLyricElement.scrollIntoView({behavior: 'smooth', block: 'center'});
     }
@@ -539,3 +542,36 @@ $('clean-list-button').addEventListener('click', () => {
   }
 
 })
+
+
+let isLyricWindowOpen = false; // 标记歌词窗口是否已打开
+
+
+// 绑定按钮的点击事件处理函数
+document.getElementById('show-lrc').addEventListener('click', () => {
+  if (isLyricWindowOpen) {
+    // 关闭歌词窗口
+    ipcRenderer.send('closeLyricWindow');
+  } else {
+    // 打开歌词窗口
+    ipcRenderer.send('showLyricWindow');
+  }
+});
+
+
+// 监听来自主进程的消息，更新按钮样式
+ipcRenderer.on('updateLyricWindowStatus', (event, isOpen) => {
+  isLyricWindowOpen = isOpen;
+
+  const showLrcButton = document.getElementById('show-lrc');
+  if (isOpen) {
+    //打开了
+    showLrcButton.classList.remove('btn-outline-secondary');
+    showLrcButton.classList.add('btn-secondary');
+  } else {
+    //没打开
+    showLrcButton.classList.remove('btn-secondary');
+    showLrcButton.classList.add('btn-outline-secondary');
+
+  }
+});

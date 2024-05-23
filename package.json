@@ -10,7 +10,7 @@
   },
   "main": "main.js",
   "scripts": {
-    "start": "nodemon --watch main.js --exec \"electron .\"",
+    "start": "nodemon --watch main.js  --exec   \" chcp 65001 && electron .\"",
     "dist": "build"
   },
   "build": {
