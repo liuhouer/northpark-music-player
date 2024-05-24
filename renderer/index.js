@@ -392,19 +392,27 @@ progressBar.addEventListener('click', (event) => {
 
 
 
-const parseLyricsFile = async (path) => {
+
+
+const parseLyricsFile = (path) => {
+  const fs = require('fs');
+  const jschardet = require('jschardet');
+  const iconv = require('iconv-lite');
+
   try {
-    const response = await fetch(path);
-    const buffer = await response.arrayBuffer();
-    const decoder = new TextDecoder('GBK');
-    const lyricsContent = decoder.decode(buffer);
-    //console.log('lyricsContent', lyricsContent);
+    const buffer = fs.readFileSync(path);
+    const detectedEncoding = jschardet.detect(buffer);
+    const encoding = detectedEncoding.encoding;
+    console.log('LRC encoding:', encoding);
+
+    const lyricsContent = iconv.decode(buffer, encoding);
     return parseLyrics(lyricsContent);
   } catch (error) {
     console.error('Error reading lyrics file:', error);
     return [];
   }
 };
+
 
 
 const parseLyrics = (lyricsText) => {

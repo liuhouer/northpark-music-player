@@ -1,7 +1,7 @@
 {
   "name": "northpark-music-player",
   "productName": "NorthparkMusicPlayer",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "A minimal Electron application",
   "copyright": "northpark.cn",
   "author": {
@@ -80,9 +80,12 @@
   },
   "dependencies": {
     "bootstrap": "^4.3.1",
+    "chardet": "^2.0.0",
+    "charset-detector": "^0.0.2",
     "electron-store": "^3.2.0",
     "iconv-lite": "^0.6.3",
     "jquery": "^3.4.1",
+    "jschardet": "^3.1.2",
     "jsmediatags": "^3.9.7",
     "popper.js": "^1.15.0",
     "uuid": "^3.3.2"

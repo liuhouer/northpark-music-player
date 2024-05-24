@@ -34,7 +34,7 @@ class AppWindow extends BrowserWindow {
       this.show()
     })
 
-    //this.setMenu(null); // 移除菜单栏
+    this.setMenu(null); // 移除菜单栏
 
   }
 }
@@ -59,6 +59,16 @@ app.on('ready', () => {
   mainWindow.webContents.on('did-finish-load',() => {
     mainWindow.send('getTracks', myStore.getTracks())
   })
+
+  //关闭时
+  mainWindow.on('closed', () => {
+    if(lyricWindow){
+      lyricWindow.close();
+    }
+
+     addWindowInstance = null;
+  });
+
 
   let addWindowInstance = null;
   // 监听'add-music-window'事件，创建添加音乐窗口实例
@@ -176,13 +186,13 @@ app.on('ready', () => {
       // 创建歌词窗口
       lyricWindow = new BrowserWindow({
         width: 900,
-        height: 120,
+        height: 100,
         x: (width - 900) / 2, // 将窗口水平居中
         y: height - 120, // 将窗口设置在屏幕最下方
         alwaysOnTop: true, // 窗口始终显示在最上层
         transparent: true, // 设置窗口为透明
         frame: false, // 移除窗口的边框
-        backgroundColor: '#000000E6', // 设置背景颜色透明度为90%
+        skipTaskbar: true, // 不显示在任务栏
         webPreferences: {
           nodeIntegration: true, // 允许在窗口中使用Node.js API
           contextIsolation: false,
@@ -190,6 +200,11 @@ app.on('ready', () => {
         }
       });
 
+      // 设置窗口透明度为20%
+      lyricWindow.setOpacity(0.9);
+
+      // 启用鼠标穿透
+      lyricWindow.setIgnoreMouseEvents(true, { forward: true });
 
       lyricWindow.setMenu(null); // 移除菜单栏
 
@@ -199,7 +214,7 @@ app.on('ready', () => {
       // 当歌词窗口被关闭时将其引用置为空
       lyricWindow.on('closed', () => {
         lyricWindow = null;
-        mainWindow.webContents.send('updateLyricWindowStatus', false);
+        //mainWindow.webContents.send('updateLyricWindowStatus', false);
       });
 
     }
