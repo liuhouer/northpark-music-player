@@ -29,6 +29,6 @@ npm run dist
 
 本地极简主义播放器1.0，支持歌词动态显示
 
-![P1](https://github.com/liuhouer/northpark-music-player/assets/2586497/7193069b-0448-49bd-b526-027bd1ccd80c)
+![P1](https://github.com/liuhouer/northpark-music-player/assets/2586497/7716c2ff-4f1c-4e9d-8540-e352e5276d89)
 ![P2](https://github.com/liuhouer/northpark-music-player/assets/2586497/fc06040e-2702-473e-8704-34e03672cdd8)
 
