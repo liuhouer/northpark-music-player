@@ -200,7 +200,12 @@ musicAudio.addEventListener('timeupdate', () => {
       // 构建当前歌词的 HTML 代码，每个字母都包裹在一个 <span> 元素中
       const currentLyricHTML = curLyrics[currentLyricIndex].text
           .split('')
-          .map((char, index) => `<span class="char-${index}">${char}</span>`)
+          .map((char, index) => {
+            if (char === ' ') {
+              return ' '; // 保留空格
+            }
+            return `<span class="char-${index}">${char}</span>`;
+          })
           .join('');
 
       const nextLyricText = curLyrics[currentLyricIndex+1] ? curLyrics[currentLyricIndex+1].text : '';

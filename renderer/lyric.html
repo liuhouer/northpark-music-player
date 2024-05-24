@@ -4,20 +4,20 @@
     <meta charset="UTF-8">
     <title>歌词窗口</title>
     <style>
-        #current-lyric {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: normal;
-            justify-content: center;
+        .lyric-text {
+            display: inline-flex!important;
+            justify-content: center!important;
+            align-items: center!important;
             font-size: 16px;
-            font-weight: bold; /* 添加字体加粗样式 */
+            font-weight: bold;
+            white-space: pre-wrap;
         }
+
     </style>
     <link rel="stylesheet" href="./index.css">
 </head>
 <body>
-<div id="current-lyric"></div>
+<div id="current-lyric" class="lyric-text"></div>
 
 <script>
     // 在这里监听来自主进程的消息，并更新当前歌词的内容
@@ -25,7 +25,9 @@
 
     ipcRenderer.on('updateDeskLc', (event, lyric) => {
         const currentLyricElement = document.getElementById('current-lyric');
-        currentLyricElement.innerHTML = lyric;
+        lyric = lyric.split('<br>').join('<br><br>');
+        console.log('receive desk lrc',lyric)
+        currentLyricElement.innerHTML = '<pre>'+lyric+'</pre>';
         currentLyricElement.scrollIntoView({behavior: 'smooth', block: 'center'});
     });
 
