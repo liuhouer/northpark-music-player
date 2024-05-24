@@ -79,8 +79,8 @@ const updateProgressHTML = (currentTime, duration) => {
 const readMP3Cover = async (filePath) => {
 
   jsmediatags.read(filePath, {
-    onSuccess: function (tag) {
-      const { picture } = tag.tags;
+    onSuccess: async function (tag) {
+      const {picture} = tag.tags;
       if (picture) {
         const base64String = arrayBufferToBase64(picture.data);
         const coverImageSrc = `data:${picture.format};base64,${base64String}`;
@@ -88,8 +88,20 @@ const readMP3Cover = async (filePath) => {
 
         $('current-cover').src = coverImageSrc;
 
-      }else{
-        $('current-cover').src = 'defaultCover.ico';
+      } else {
+        try {
+          const songInfo = await fetchSongInfo();
+          console.log('读取歌曲标签songInfo', songInfo)
+
+          const cover = await getCover(songInfo.id);
+          console.log('读取歌曲标签cover', cover)
+          if (cover) {
+            $('current-cover').src = cover;
+          }
+        } catch (ee) {
+          $('current-cover').src = 'defaultCover.ico';
+        }
+
 
       }
     },
@@ -181,9 +193,7 @@ musicAudio.addEventListener('timeupdate', () => {
   // 更新歌词的滚动显示
   if (curLyrics && curLyrics.length) {
     const currentLyricElement = $('current-lyric');
-    const currentLyricTime = curLyrics[currentLyricIndex].time;
-
-
+    const currentLyricTime = currentLyricIndex>=curLyrics.length  ? musicAudio.duration:curLyrics[currentLyricIndex].time;
 
     if (musicAudio.currentTime >= currentLyricTime) {
       //currentLyricElement.textContent = curLyrics[currentLyricIndex].text;
@@ -374,11 +384,9 @@ $('next-button').addEventListener('click', async () => {
 })
 
 
-// 获取进度条元素
-const progressBar = $('progress-bar');
-
-// 添加点击事件监听器
-progressBar.addEventListener('click', (event) => {
+// 添加进度条事件监听器
+const progressBar = $('progress-bar')
+$('progress-bar').addEventListener('click', (event) => {
   // 计算鼠标点击位置相对于进度条的百分比位置
   const clickPosition = event.clientX - progressBar.getBoundingClientRect().left;
   const progressBarWidth = progressBar.clientWidth;
@@ -396,30 +404,99 @@ progressBar.addEventListener('click', (event) => {
 });
 
 
+//根据歌曲来获取歌曲信息，包含标签和网易云id等
+const fetchSongInfo = async()=> {
+  const mm = require('music-metadata');
+  const metadata = await mm.parseFile(currentTrack.path);
+  const {common} = metadata;
+
+  // 获取歌曲名和歌手名
+  const songTitle = common.title;
+  const artistName = common.artist;
+
+  console.log('歌曲名:', songTitle);
+  console.log('歌手名:', artistName);
+
+  // 如果文件不存在,则调用网易云音乐API获取歌词
+  const songInfo = await getSong(songTitle, artistName);
+  return songInfo;
+}
 
 
-
-const parseLyricsFile = (path) => {
+//从文件读取歌词 || 从网易云读取歌词
+const parseLyricsFile = async (path) => {
   const fs = require('fs');
   const jschardet = require('jschardet');
   const iconv = require('iconv-lite');
 
   try {
-    const buffer = fs.readFileSync(path);
-    const detectedEncoding = jschardet.detect(buffer);
-    const encoding = detectedEncoding.encoding;
-    console.log('LRC encoding:', encoding);
+    // 检查文件是否存在
+    if (fs.existsSync(path)) {
+      const buffer = fs.readFileSync(path);
+      const detectedEncoding = jschardet.detect(buffer);
+      const encoding = detectedEncoding.encoding;
+      console.log('LRC encoding:', encoding);
 
-    const lyricsContent = iconv.decode(buffer, encoding);
-    return parseLyrics(lyricsContent);
+      const lyricsContent = iconv.decode(buffer, encoding);
+      return parseLyrics(lyricsContent);
+    }
+    const songInfo = await fetchSongInfo();
+    const lyrics = await getLyrics(songInfo.id);
+    // 将歌词写入文件
+    fs.writeFileSync(path, lyrics);
+
+    return parseLyrics(lyrics);
+
   } catch (error) {
     console.error('Error reading lyrics file:', error);
     return [];
   }
 };
 
+// 从网易云音乐API获取歌曲ID
+const getSong = async (songName, artistName) => {
+  const searchUrl = `http://music.163.com/api/search/get/?s=${encodeURIComponent(`${artistName} ${songName}`)}&limit=1&type=1&offset=0`;
+  const response = await fetch(searchUrl);
+  const data = await response.json();
+
+  if (data.code === 200 && data.result.songs.length > 0) {
+    return data.result.songs[0];
+  }
+
+  throw new Error('Failed to get song List');
+};
+
+// 从网易云音乐API获取歌词
+const getLyrics = async (songId) => {
+  const lyricsUrl = `http://music.163.com/api/song/lyric?os=osx&id=${songId}&lv=-1&kv=-1&tv=-1`;
+  const response = await fetch(lyricsUrl);
+  const data = await response.json();
+  console.log('从网易云音乐API获取歌词', data)
+  if (data.code === 200 && data.lrc && data.lrc.lyric) {
+    return data.lrc.lyric;
+  }
+
+  throw new Error('Failed to get lyrics');
+};
+
+// 从网易云音乐API获取专辑图
+const getCover = async (songId) => {
+  const detailUrl = `http://music.163.com/api/song/detail?id=${songId}&ids=[${songId}]&csrf_token=`;
+  const response = await fetch(detailUrl);
+  const data = await response.json();
+
+  console.log('从网易云音乐API获取专辑图',data)
+  console.log('从网易云音乐API获取专辑图',data.songs)
+
+  if (data.code === 200 && data.songs && data.songs[0].album.blurPicUrl) {
+    return data.songs[0].album.blurPicUrl;
+  }
+
+  throw new Error('Failed to get Cover');
+};
 
 
+// 歌词解析为时间+文本
 const parseLyrics = (lyricsText) => {
   // 解析歌词文本，返回歌词数据
   // 将歌词文本按行分割成数组
@@ -460,9 +537,10 @@ const parseLyrics = (lyricsText) => {
     } else {//其他默认处理
       //console.log("其他默认处理",line)
       // Fallback for unrecognized lines (treat as plain text)
-      if (lyrics.length > 0) {
-        lyrics[lyrics.length - 1].text += '\n' + line.trim();
+      if(line.trim()){
+        lyrics.push({ "time": 0.00+lyrics.length,  "text": line.trim()});
       }
+
     }
   }
 
@@ -560,7 +638,7 @@ $('clean-list-button').addEventListener('click', () => {
 let isLyricWindowOpen = false; // 标记歌词窗口是否已打开
 
 
-// 绑定按钮的点击事件处理函数
+// 桌面歌词
 document.getElementById('show-lrc').addEventListener('click', () => {
   if (isLyricWindowOpen) {
     // 关闭歌词窗口
@@ -572,7 +650,7 @@ document.getElementById('show-lrc').addEventListener('click', () => {
 });
 
 
-// 监听来自主进程的消息，更新按钮样式
+// 桌面歌词样式
 ipcRenderer.on('updateLyricWindowStatus', (event, isOpen) => {
   isLyricWindowOpen = isOpen;
 
