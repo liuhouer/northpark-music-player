@@ -16,6 +16,8 @@ let currentLyricIndexAnimationDuration = 1  //用于跟踪当前歌词的动画�
 
 let curLyrics //当前播放歌曲的歌词
 
+let curLyricDisplayText
+
 
 // 渲染音乐列表的HTML代码
 const renderListHTML = (tracks) => {
@@ -238,6 +240,8 @@ musicAudio.addEventListener('timeupdate', () => {
 
       // 发送当前歌词给桌面歌词窗口
       ipcRenderer.send('updateDeskLyric', currentLyricElement.innerHTML);
+
+      curLyricDisplayText = currentLyricElement.innerHTML;//设置到环境变量中，歌词点击显示&隐藏时 触发一次发送消息
 
       currentLyricIndex++;
       currentLyricElement.scrollIntoView({behavior: 'smooth', block: 'center'});
@@ -646,6 +650,8 @@ document.getElementById('show-lrc').addEventListener('click', () => {
   } else {
     // 打开歌词窗口
     ipcRenderer.send('showLyricWindow');
+    //设置到环境变量中，歌词点击显示&隐藏时 触发一次发送消息
+    ipcRenderer.send('updateDeskLyric', curLyricDisplayText?curLyricDisplayText:'歌词加载中...');
   }
 });
 
@@ -659,6 +665,7 @@ ipcRenderer.on('updateLyricWindowStatus', (event, isOpen) => {
     //打开了
     showLrcButton.classList.remove('btn-outline-secondary');
     showLrcButton.classList.add('btn-secondary');
+
   } else {
     //没打开
     showLrcButton.classList.remove('btn-secondary');

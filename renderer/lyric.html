@@ -25,6 +25,7 @@
 
     ipcRenderer.on('updateDeskLc', (event, lyric) => {
         const currentLyricElement = document.getElementById('current-lyric');
+        currentLyricElement.innerHTML = '';
         console.log('receive desk lrc',lyric)
         currentLyricElement.innerHTML = '<pre>'+lyric+'</pre>';
         currentLyricElement.scrollIntoView({behavior: 'smooth', block: 'center'});

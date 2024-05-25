@@ -3,7 +3,9 @@ const { $ } = require('./helper')
 const path = require('path')
 let musicFilesPath = []
 
+
 $('select-music').addEventListener('click', () => {
+  console.log('发送了事件---打开文件')
   ipcRenderer.send('open-music-file')
 })
 
@@ -21,6 +23,7 @@ const renderListHTML = (pathes) => {
   musicList.innerHTML = `<ul class="list-group">${musicItemsHTML}</ul>`
 }
 
+//选择音乐
 ipcRenderer.on('selected-file', (event, path) => {
   if(Array.isArray(path)) {
     renderListHTML(path)
