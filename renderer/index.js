@@ -191,9 +191,6 @@ musicAudio.addEventListener('loadedmetadata', async () => {
 musicAudio.addEventListener('timeupdate', () => {
   // 更新播放器状态
   updateProgressHTML(musicAudio.currentTime, musicAudio.duration);
-  if(currentLyricIndex>=curLyrics.length){
-    currentLyricIndex = 0;
-  }
 
   // 更新歌词的滚动显示
   if (curLyrics && curLyrics.length) {
