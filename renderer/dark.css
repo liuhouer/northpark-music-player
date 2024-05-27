@@ -17,3 +17,10 @@ body.dark-mode .bg-white{
     color: #fff !important;
 }
 
+
+/* 深色模式样式 */
+body.dark-mode .fixed-buttons{
+    background-color: #121212 !important;
+    color: #fff !important;
+}
+

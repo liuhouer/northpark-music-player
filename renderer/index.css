@@ -58,3 +58,21 @@
     color: #696666;
   }
 }
+
+
+.fixed-buttons {
+   position: fixed;
+   top: 0;
+   left: 0;
+   width: 100%;
+   z-index: 999;
+   background-color: #fff;
+   display: flex;
+   justify-content: space-between;
+   padding: 10px;
+ }
+
+.fixed-buttons button {
+  flex: 1;
+  margin: 0 1px;
+}

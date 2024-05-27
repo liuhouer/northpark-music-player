@@ -1,6 +1,6 @@
 
 //引入了Electron模块中的app、BrowserWindow、ipcMain和dialog对象，并引入了自定义的MusicDataStore模块。
-const { app, BrowserWindow, ipcMain, dialog  } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, ipcRenderer} = require('electron')
 const DataStore = require('./renderer/MusicDataStore')
 
 
@@ -57,7 +57,16 @@ app.on('ready', () => {
 
   // 在主窗口的webContents完成加载后，发送获取音乐数据的请求
   mainWindow.webContents.on('did-finish-load',() => {
+    //恢复音乐列表
     mainWindow.send('getTracks', myStore.getTracks())
+    //恢复桌面歌词
+    mainWindow.send('LyricWindowStatus', myStore.getShowLyricWindow())
+    //启动时恢复随机播放状态
+    mainWindow.send('RandomStatus', myStore.getIsRandom())
+    //启动时恢复单曲循环状态
+    mainWindow.send('LoopStatus', myStore.getIsLooping())
+    //启动时恢复暗色模式
+    mainWindow.send('DarkStatus', myStore.getIsDarkMode())
   })
 
   //关闭时
@@ -161,6 +170,9 @@ app.on('ready', () => {
     // 例如，通过窗口对象进行样式的修改
     mainWindow.webContents.send('apply-dark-mode', isDarkMode);
 
+    //保存到配置文件
+    myStore.saveIsDarkMode(isDarkMode);
+
   });
 
 
@@ -169,12 +181,17 @@ app.on('ready', () => {
     console.log('closeLyricWindow---->  lyricWindow states',lyricWindow);
     if (lyricWindow) {
       lyricWindow.close();
+      //保存到配置文件
+      myStore.saveShowLyricWindow(false);
+
     }
     mainWindow.webContents.send('updateLyricWindowStatus', false);
   });
 
   // 监听来自桌面歌词窗口的打开
   ipcMain.on('showLyricWindow',(event) => {
+    //保存到配置文件
+    myStore.saveShowLyricWindow(true);
     console.log('showLyricWindow---->   lyricWindow states',lyricWindow);
     // 发送showLyricWindow事件给歌词窗口
     if (!lyricWindow) {
@@ -229,6 +246,19 @@ app.on('ready', () => {
       lyricWindow.send('updateDeskLc', curLrc)
     }
 
+  });
+
+
+  // 监听随机播放的状态
+  ipcMain.on('isRandom', (event, isRandom) => {
+      //保存到配置文件
+      myStore.saveIsRandom(isRandom);
+  });
+
+  // 监听单曲循环状态
+  ipcMain.on('isLooping', (event, isLooping) => {
+    //保存到配置文件
+    myStore.saveIsLooping(isLooping);
   });
 
 

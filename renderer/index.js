@@ -191,6 +191,9 @@ musicAudio.addEventListener('loadedmetadata', async () => {
 musicAudio.addEventListener('timeupdate', () => {
   // 更新播放器状态
   updateProgressHTML(musicAudio.currentTime, musicAudio.duration);
+  if(currentLyricIndex>=curLyrics.length){
+    currentLyricIndex = 0;
+  }
 
   // 更新歌词的滚动显示
   if (curLyrics && curLyrics.length) {
@@ -252,38 +255,60 @@ musicAudio.addEventListener('timeupdate', () => {
 });
 
 
-
-// 我们添加了一个ended事件的监听器。
-// 当歌曲播放完成时触发该事件，我们通过找到当前歌曲在allTracks数组中的索引，计算出下一首歌曲的索引。
-// 然后，使用下一首歌曲的路径更新musicAudio对象的src属性，并调用play()方法开始播放下一首歌曲。
+// 歌曲播放完成事件
 musicAudio.addEventListener('ended', async () => {
-  // 歌曲播放完成后的逻辑
-  const currentIndex = allTracks.findIndex(track => track.id === currentTrack.id)
-  const nextIndex = (currentIndex + 1) % allTracks.length
-  currentTrack = allTracks[nextIndex]
 
-  renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
+  if (isLooping) {
+    // 单曲循环逻辑
+    musicAudio.currentTime = 0;
+    musicAudio.play();
+    await loadLrc();//自然播放完成状态后 刷新歌词  否则会有问题
+  } else if (isRandom) {
+    // 随机播放逻辑
+    const randomIndex = Math.floor(Math.random() * allTracks.length);
+    currentTrack = allTracks[randomIndex];
+    musicAudio.src = currentTrack.path;
+    musicAudio.play();
 
-  //加载歌词
-  //curLyrics = await loadLrc();
+    // 还原上次播放图标为未在播放
+    const resetIconEle = document.querySelector('.fa-pause')
+    if (resetIconEle) {
+      resetIconEle.classList.replace('fa-pause', 'fa-play')
+    }
 
-  musicAudio.src = currentTrack.path
-  musicAudio.play()
+    //把正在播放的歌曲图标切换状态
+    const tracksList = document.getElementById('tracksList');
+    const currentTrackElement = tracksList.querySelector(`[data-id="${currentTrack.id}"]`);
+    if (currentTrackElement) {
+      currentTrackElement.classList.replace('fa-play', 'fa-pause');
+    }
 
-  // 还原上次播放图标
-  const resetIconEle = document.querySelector('.fa-pause')
-  console.log("下一曲resetIconEle",resetIconEle);
-  if (resetIconEle) {
-    resetIconEle.classList.replace('fa-pause', 'fa-play')
+    renderPlayerHTML(currentTrack.fileName, musicAudio.duration);
+  }else{
+
+    // 歌曲播放完成后的逻辑
+    const currentIndex = allTracks.findIndex(track => track.id === currentTrack.id)
+    const nextIndex = (currentIndex + 1) % allTracks.length
+    currentTrack = allTracks[nextIndex]
+
+    musicAudio.src = currentTrack.path
+    musicAudio.play()
+
+    // 还原上次播放图标为未在播放
+    const resetIconEle = document.querySelector('.fa-pause')
+    if (resetIconEle) {
+      resetIconEle.classList.replace('fa-pause', 'fa-play')
+    }
+
+    // 替换最新播放图标
+    const tracksList = document.getElementById('tracksList');
+    const currentTrackElement = tracksList.querySelector(`[data-id="${currentTrack.id}"]`);
+    if (currentTrackElement) {
+      currentTrackElement.classList.replace('fa-play', 'fa-pause');
+    }
+
+    renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
   }
-
-  // 替换最新播放图标
-  const tracksList = document.getElementById('tracksList');
-  const currentTrackElement = tracksList.querySelector(`[data-id="${currentTrack.id}"]`);
-  if (currentTrackElement) {
-    currentTrackElement.classList.replace('fa-play', 'fa-pause');
-  }
-
 
 
 })
@@ -567,10 +592,18 @@ $('dark-mode-button').addEventListener('click', () => {
   if (body.classList.contains('dark-mode')) {
     icon.classList.remove('fa-moon');
     icon.classList.add('fa-sun');
+
+    $('dark-mode-button').classList.remove('btn-outline-secondary');
+    $('dark-mode-button').classList.add('btn-secondary');
+
     $('dark-mode-button').title = '亮色模式';
   } else {
     icon.classList.remove('fa-sun');
     icon.classList.add('fa-moon');
+
+    $('dark-mode-button').classList.remove('btn-secondary');
+    $('dark-mode-button').classList.add('btn-outline-secondary');
+
     $('dark-mode-button').title = '暗色模式';
   }
 
@@ -673,3 +706,88 @@ ipcRenderer.on('updateLyricWindowStatus', (event, isOpen) => {
 
   }
 });
+
+
+const loopButton = $('loop-button');
+const randomButton = $('random-button');
+let isLooping = false;
+let isRandom = false;
+
+// 单曲循环按钮点击事件
+loopButton.addEventListener('click', () => {
+  isLooping = !isLooping;
+  loopButton.classList.toggle('btn-secondary');
+  loopButton.classList.toggle('btn-outline-secondary');
+
+  if (isLooping) {
+    // 单曲循环逻辑 --发送消息&记录
+    ipcRenderer.send('isLooping',true);
+    ipcRenderer.send('isRandom',false);
+
+    // 取消随机播放
+    if (isRandom) {
+      isRandom = false;
+      randomButton.classList.remove('btn-secondary');
+      randomButton.classList.add('btn-outline-secondary');
+    }
+
+  } else {
+    // 取消单曲循环逻辑  --发送消息&记录
+    ipcRenderer.send('isLooping',false);
+  }
+});
+
+// 随机播放按钮点击事件
+randomButton.addEventListener('click', () => {
+  isRandom = !isRandom;
+  randomButton.classList.toggle('btn-secondary');
+  randomButton.classList.toggle('btn-outline-secondary');
+
+  if (isRandom) {
+    // 随机播放逻辑 --发送消息&记录
+    ipcRenderer.send('isRandom',true);
+    ipcRenderer.send('isLooping',false);
+
+    // 取消单曲循环
+    if (isLooping) {
+      isLooping = false;
+      loopButton.classList.remove('btn-secondary');
+      loopButton.classList.add('btn-outline-secondary');
+      musicAudio.loop = false;
+    }
+  }else{
+    // 取消随机播放逻辑 --发送消息&记录
+    ipcRenderer.send('isRandom',false);
+  }
+});
+
+//启动时恢复桌面歌词状态
+ipcRenderer.on('LyricWindowStatus', (event, isOpen) => {
+  if(isOpen){
+    document.getElementById('show-lrc').click();
+  }
+});
+
+//启动时恢复随机播放状态
+ipcRenderer.on('RandomStatus', (event, isOpen) => {
+  if(isOpen){
+    randomButton.click();
+  }
+});
+
+//启动时恢复单曲循环状态
+ipcRenderer.on('LoopStatus', (event, isOpen) => {
+  if(isOpen){
+    loopButton.click();
+  }
+});
+
+//启动时恢复暗色状态状态
+ipcRenderer.on('DarkStatus', (event, isOpen) => {
+  if(isOpen){
+    $('dark-mode-button').click();
+  }
+});
+
+
+
