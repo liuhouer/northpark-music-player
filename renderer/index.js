@@ -1,12 +1,11 @@
 
 //这部分代码引入了Electron模块中的ipcRenderer对象，并引入了自定义的helper模块。
 //它还创建了一个Audio对象musicAudio用于播放音乐，以及用于存储音乐数据的变量allTracks和当前播放的音乐currentTrack。
-const { ipcRenderer } = require('electron')
+const { ipcRenderer  } = require('electron')
 const { $, convertDuration } = require('./helper')
 
 //读取歌曲标签
 const jsmediatags = require('jsmediatags');
-
 
 let musicAudio = new Audio()
 let allTracks
@@ -49,16 +48,29 @@ const renderPlayerHTML = (name, duration) => {
                   <span ><img id="current-cover" src=""/></span>
                 </div>
                 
-                <div class="col-4 font-weight-bold">
+                <div class="col-3 font-weight-bold">
                   正在播放：${name}
+                  
+                  
                 </div>
-                <div class="col-3">
+                
+                <div class="col-2">
                   <span id="current-seeker">00:00</span> / ${convertDuration(duration)}
                 </div>
+                
+                 <div class="col-2">
+                  <div class="music-spectrum-container">
+                    <canvas id="music-spectrum" style="overflow: hidden;"></canvas>
+                  </div>
+                </div>
+                
                 
                 <div class="col-4">
                 <p id="current-lyric" class="lyric-text"></p>
                 </div>
+                
+                
+                
 
 `
   player.innerHTML = html
@@ -170,10 +182,61 @@ ipcRenderer.on('getTracks', (event, tracks) => {
 
 })
 
+// ===============================频谱图渲染==================================================
+let analyser;
+let dataArray;
+let bufferLength;
+
+// 创建 AnalyserNode 对象和设置参数
+const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+analyser = audioContext.createAnalyser();
+const source = audioContext.createMediaElementSource(musicAudio);
+
+// 创建 AnalyserNode 对象和设置参数
+function createAnalyser() {
+
+  source.connect(analyser);
+  analyser.connect(audioContext.destination);
+
+  analyser.fftSize = 2048; // FFT 大小，控制频谱的精度
+  bufferLength = analyser.frequencyBinCount;
+  dataArray = new Uint8Array(bufferLength);
+}
+
+// 更新频谱图
+function updateSpectrumCtx() {
+  analyser.getByteFrequencyData(dataArray);
+
+  const musicSpectrumCanvas = document.getElementById('music-spectrum');
+  const musicSpectrumCtx = musicSpectrumCanvas.getContext('2d');
+
+  musicSpectrumCtx.clearRect(0, 0, musicSpectrumCanvas.width, musicSpectrumCanvas.height);
+
+  const barWidth = (musicSpectrumCanvas.width / bufferLength) * 20;
+  let barHeight;
+  let x = 0;
+
+  for (let i = 0; i < bufferLength; i++) {
+    barHeight = dataArray[i] / 1.5;
+
+    musicSpectrumCtx.fillStyle = '#8e8686';
+
+    musicSpectrumCtx.fillRect(x, musicSpectrumCanvas.height - barHeight/2, barWidth, barHeight);
+
+    x += barWidth + 3;
+  }
+}
+
+// ===============================频谱图渲染==================================================
+
+
 //当音频元数据加载完成时，调用renderPlayerHTML函数渲染播放器状态的HTML代码。
 musicAudio.addEventListener('loadedmetadata', async () => {
   //渲染播放器状态
   renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
+
+  // 创建 AnalyserNode 对象和设置参数
+  createAnalyser();
 
   //加载歌词
   curLyrics = await loadLrc();
@@ -191,6 +254,11 @@ musicAudio.addEventListener('loadedmetadata', async () => {
 musicAudio.addEventListener('timeupdate', () => {
   // 更新播放器状态
   updateProgressHTML(musicAudio.currentTime, musicAudio.duration);
+
+
+  // 更新频谱图
+  updateSpectrumCtx();
+
 
   // 更新歌词的滚动显示
   if (curLyrics && curLyrics.length) {

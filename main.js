@@ -19,7 +19,7 @@ class AppWindow extends BrowserWindow {
   // 当窗口准备好显示时，调用show方法显示窗口
   constructor(config, fileLocation) {
     const basicConfig = {
-      width: 800,
+      width: 1200,
       height: 600,
       webPreferences: {
         nodeIntegration: true,
@@ -34,7 +34,7 @@ class AppWindow extends BrowserWindow {
       this.show()
     })
 
-    this.setMenu(null); // 移除菜单栏
+   this.setMenu(null); // 移除菜单栏
 
   }
 }
@@ -218,12 +218,13 @@ app.on('ready', () => {
       });
 
       // 设置窗口透明度为20%
-      lyricWindow.setOpacity(0.9);
+      //lyricWindow.setOpacity(0.9);
 
       // 启用鼠标穿透
       lyricWindow.setIgnoreMouseEvents(true, { forward: true });
 
       lyricWindow.setMenu(null); // 移除菜单栏
+
 
       // 加载歌词窗口的HTML文件
       lyricWindow.loadFile('./renderer/lyric.html');

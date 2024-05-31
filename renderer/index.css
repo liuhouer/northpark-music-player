@@ -11,6 +11,7 @@
   max-height: 50px;
 }
 
+
 .fixed-bottom {
   bottom: 0;
   left: 0;
@@ -75,4 +76,12 @@
 .fixed-buttons button {
   flex: 1;
   margin: 0 1px;
+}
+
+
+.music-spectrum-container {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
