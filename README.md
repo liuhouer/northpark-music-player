@@ -22,13 +22,13 @@ npm start
 npm run dist
 ```
 
+```bash
+ ico图标256 *256 ;size <=50kb
+```
 
---  ico图标256 *256 ;size <=50kb
 
+本地极简主义播放器，支持歌词动态显示
 
-
-本地极简主义播放器1.0，支持歌词动态显示
-
-![P1](https://github.com/liuhouer/northpark-music-player/assets/2586497/7716c2ff-4f1c-4e9d-8540-e352e5276d89)
-![P2](https://github.com/liuhouer/northpark-music-player/assets/2586497/fc06040e-2702-473e-8704-34e03672cdd8)
+![1 0 5](https://github.com/liuhouer/northpark-music-player/assets/2586497/1e7dcf1f-5fae-4dc3-a05c-07a07ace9e98)
+![1 0 5 b](https://github.com/liuhouer/northpark-music-player/assets/2586497/f10dee0f-6bec-4bd8-a862-ccf4f9bb0e14)
 
