@@ -1,858 +1,1231 @@
-
-//这部分代码引入了Electron模块中的ipcRenderer对象，并引入了自定义的helper模块。
-//它还创建了一个Audio对象musicAudio用于播放音乐，以及用于存储音乐数据的变量allTracks和当前播放的音乐currentTrack。
-const { ipcRenderer  } = require('electron')
+const { ipcRenderer } = require('electron')
 const { $, convertDuration } = require('./helper')
 
-//读取歌曲标签
-const jsmediatags = require('jsmediatags');
+// 读取歌曲标签
+const jsmediatags = require('jsmediatags')
 
 let musicAudio = new Audio()
-let allTracks
 let currentTrack
-let currentLyricIndex = 0 //用于跟踪当前歌词的索引。
-let currentLyricIndexAnimationDuration = 1  //用于跟踪当前歌词的动画时间
-
-let curLyrics //当前播放歌曲的歌词
-
+let currentLyricIndex = 0
+let currentLyricIndexAnimationDuration = 1
+let curLyrics
 let curLyricDisplayText
+let isPlaying = false
+const trackMetaCache = {}
 
+// 歌单状态
+let playlists = []
+let currentPlaylistId = 'all'
+let dragSrcEl = null
+let pendingPlaybackState = null
 
-// 渲染音乐列表的HTML代码
-const renderListHTML = (tracks) => {
+// 保存播放状态
+const savePlaybackState = () => {
+  if (currentPlaylistId && currentTrack) {
+    ipcRenderer.send('save-playback-state', { playlistId: currentPlaylistId, trackId: currentTrack.id })
+  }
+}
+
+// 恢复播放状态
+const restorePlaybackState = (state) => {
+  if (!state || !playlists.length) return
+  const { playlistId, trackId } = state
+  if (!playlistId || !trackId) return
+
+  // 切换到对应歌单
+  const playlist = playlists.find(p => p.id === playlistId)
+  if (!playlist) return
+
+  switchPlaylist(playlistId)
+
+  // 查找并播放对应歌曲（从头播放）
+  const track = playlist.tracks.find(t => t.id === trackId)
+  if (track) {
+    currentTrack = track
+    musicAudio.src = track.path
+    // 不自动播放，只加载并定位
+    musicAudio.load()
+    renderPlayerHTML(track.fileName, 0)
+    renderListHTML(getCurrentTracks(), true)
+  }
+}
+
+// ========================= 渲染歌曲列表 =========================
+let metaLoadedForTracks = null
+
+const getCurrentTracks = () => {
+  const playlist = playlists.find(p => p.id === currentPlaylistId)
+  return playlist ? playlist.tracks : []
+}
+
+const renderListHTML = (tracks, skipMeta = false) => {
   const tracksList = $('tracksList')
-  const tracksListHTML = tracks.reduce((html, track) => {
-    html += `<li class="row music-track list-group-item d-flex justify-content-between align-items-center">
-      <div class="col-10">
-        <i class="fas fa-music mr-2 text-secondary"></i>
-        <b>${track.fileName}</b>
+  $('song-count').textContent = `${tracks.length} 首歌曲`
+
+  if (!tracks.length) {
+    tracksList.innerHTML = `
+      <div class="empty-state">
+        <i class="fas fa-music"></i>
+        <p>还没有添加任何音乐</p>
+        <button type="button" id="empty-add-btn" class="btn btn-primary">添加歌曲</button>
       </div>
-      <div class="col-2">
-        <i class="fas fa-play mr-3" data-id="${track.id}"></i>
-        <i class="fas fa-trash-alt" data-id="${track.id}"></i>
+    `
+    const emptyAddBtn = document.getElementById('empty-add-btn')
+    if (emptyAddBtn) {
+      emptyAddBtn.addEventListener('click', () => {
+        ipcRenderer.send('add-music-window', document.body.classList.contains('dark-mode'), currentPlaylistId)
+      })
+    }
+    return
+  }
+
+  const tracksListHTML = tracks.map((track, index) => {
+    const isCurrent = currentTrack && currentTrack.path === track.path
+    const isTrackPlaying = isCurrent && isPlaying
+    const meta = trackMetaCache[track.path] || {}
+    return `
+      <div class="track-row ${isCurrent ? 'playing' : ''}" data-id="${track.id}" draggable="true">
+        <div class="drag-handle" title="拖动排序">
+          <i class="fas fa-grip-vertical"></i>
+        </div>
+        <div class="track-index">
+          <span>${index + 1}</span>
+          <i class="fas fa-play play-icon" data-id="${track.id}"></i>
+          <div class="playing-indicator">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
+        <div class="track-title">
+          <div class="cover-placeholder" data-cover-id="${track.id}"><i class="fas fa-music"></i></div>
+          <span>${track.fileName.replace(/\.mp3$/i, '')}</span>
+        </div>
+        <div class="track-artist" data-artist-id="${track.id}">${meta.artist || '--'}</div>
+        <div class="track-album" data-album-id="${track.id}">${meta.album || '--'}</div>
+        <div class="track-duration" data-duration-id="${track.id}">${meta.duration || '--:--'}</div>
+        <div class="track-actions">
+          <button class="btn-icon btn-play-track" data-id="${track.id}" title="${isTrackPlaying ? '暂停' : '播放'}">
+            <i class="fas ${isTrackPlaying ? 'fa-pause' : 'fa-play'}"></i>
+          </button>
+          <button class="btn-icon btn-add-to-playlist" data-id="${track.id}" title="添加到歌单">
+            <i class="fas fa-folder-plus"></i>
+          </button>
+          <button class="btn-icon btn-delete-track" data-id="${track.id}" title="${currentPlaylistId === 'all' ? '删除' : '从歌单移除'}">
+            <i class="fas ${currentPlaylistId === 'all' ? 'fa-trash-alt' : 'fa-minus'}"></i>
+          </button>
+        </div>
       </div>
-    </li>`
-    return html
-  }, '');
-  const emptyTrackHTML = '<div class="alert alert-primary">还没有添加任何音乐</div>'
-  tracksList.innerHTML = tracks.length ? `<ul class="list-group">${tracksListHTML}</ul>` : emptyTrackHTML
+    `
+  }).join('')
 
+  tracksList.innerHTML = `<div class="tracks-list-content">${tracksListHTML}</div>`
+
+  // 绑定事件
+  bindTrackEvents()
+  bindDragEvents()
+
+  // 异步读取元数据（仅当tracks变化时）
+  const tracksKey = tracks.map(t => t.id).join(',')
+  if (!skipMeta && metaLoadedForTracks !== tracksKey && tracks.length > 0) {
+    metaLoadedForTracks = tracksKey
+    loadTracksMeta(tracks)
+  }
 }
 
-// 渲染播放器状态的HTML代码
-const renderPlayerHTML = (name, duration) => {
-  const player = $('player-status')
-  const html = `
+// 批量异步读取歌曲元数据
+const loadTracksMeta = async (tracks) => {
+  const mm = require('music-metadata')
+  for (const track of tracks) {
+    if (trackMetaCache[track.path]) continue // 已缓存则跳过
+    try {
+      const metadata = await mm.parseFile(track.path)
+      const { common, format } = metadata
+      const artist = common.artist || common.artists?.join(', ') || '--'
+      const album = common.album || '--'
+      const duration = format.duration ? convertDuration(format.duration) : '--:--'
 
-                <div class="col-1">
-                  <span ><img id="current-cover" src=""/></span>
-                </div>
-                
-                <div class="col-3 font-weight-bold">
-                  正在播放：${name}
-                  
-                  
-                </div>
-                
-                <div class="col-2">
-                  <span id="current-seeker">00:00</span> / ${convertDuration(duration)}
-                </div>
-                
-                 <div class="col-2">
-                  <div class="music-spectrum-container">
-                    <canvas id="music-spectrum" style="overflow: hidden;"></canvas>
-                  </div>
-                </div>
-                
-                
-                <div class="col-4">
-                <p id="current-lyric" class="lyric-text"></p>
-                </div>
-                
-                
-                
+      trackMetaCache[track.path] = { artist, album, duration }
 
-`
-  player.innerHTML = html
+      const artistEl = document.querySelector(`[data-artist-id="${track.id}"]`)
+      const albumEl = document.querySelector(`[data-album-id="${track.id}"]`)
+      const durationEl = document.querySelector(`[data-duration-id="${track.id}"]`)
+
+      if (artistEl) artistEl.textContent = artist
+      if (albumEl) albumEl.textContent = album
+      if (durationEl) durationEl.textContent = duration
+    } catch (e) {
+      trackMetaCache[track.path] = { artist: '--', album: '--', duration: '--:--' }
+    }
+  }
 }
 
-// 更新播放进度的HTML代码
-const updateProgressHTML = (currentTime, duration) => {
-  // 计算 progress 是当前要解决的问题
-  const progress = Math.floor(currentTime / duration * 100)
-  const bar = $('player-progress')
-  bar.innerHTML = progress + '%'
-  bar.style.width = progress + '%'
-  const seeker = $('current-seeker')
-  seeker.innerHTML = convertDuration(currentTime)
+const bindTrackEvents = () => {
+  // 点击整行播放
+  document.querySelectorAll('.track-row').forEach(row => {
+    row.addEventListener('dblclick', (e) => {
+      const id = row.dataset.id
+      if (id) playTrack(id)
+    })
+  })
 
-}
-
-
-// 读取 MP3 文件的封面图像
-const readMP3Cover = async (filePath) => {
-
-  jsmediatags.read(filePath, {
-    onSuccess: async function (tag) {
-      const {picture} = tag.tags;
-      if (picture) {
-        const base64String = arrayBufferToBase64(picture.data);
-        const coverImageSrc = `data:${picture.format};base64,${base64String}`;
-        // 这里可以使用 coverImageSrc 来展示或处理封面图像
-
-        $('current-cover').src = coverImageSrc;
-
+  // 播放按钮
+  document.querySelectorAll('.btn-play-track, .play-icon').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const id = btn.dataset.id
+      if (!id) return
+      const clickedTrack = getCurrentTracks().find(t => t.id === id)
+      if (currentTrack && clickedTrack && currentTrack.path === clickedTrack.path && isPlaying) {
+        pauseTrack()
       } else {
-        try {
-          const songInfo = await fetchSongInfo();
-          console.log('读取歌曲标签songInfo', songInfo)
+        playTrack(id)
+      }
+    })
+  })
 
-          const cover = await getCover(songInfo.id);
-          console.log('读取歌曲标签cover', cover)
-          if (cover) {
-            $('current-cover').src = cover;
-          }
-        } catch (ee) {
-          $('current-cover').src = 'defaultCover.ico';
-        }
+  // 删除按钮
+  document.querySelectorAll('.btn-delete-track').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const id = btn.dataset.id
+      if (!id) return
+      if (currentPlaylistId === 'all') {
+        ipcRenderer.send('delete-track', { id, playlistId: currentPlaylistId })
+      } else {
+        ipcRenderer.send('remove-from-playlist', { playlistId: currentPlaylistId, trackId: id })
+      }
+    })
+  })
 
+  // 添加到歌单按钮
+  document.querySelectorAll('.btn-add-to-playlist').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const id = btn.dataset.id
+      if (id) showPlaylistMenu(e.target.closest('.btn-add-to-playlist'), id)
+    })
+  })
+}
 
+// ========================= 播放器状态渲染 =========================
+const renderPlayerHTML = (name, duration) => {
+  const titleEl = $('current-title')
+  const artistEl = $('current-artist')
+  const coverWrapper = document.querySelector('.cover-wrapper')
+
+  if (!currentTrack) {
+    titleEl.textContent = '未在播放'
+    artistEl.textContent = '--'
+    coverWrapper.innerHTML = '<div class="cover-placeholder"><i class="fas fa-music"></i></div>'
+    updatePlayButton(false)
+    updateCoverRotation(false)
+    return
+  }
+
+  titleEl.textContent = name.replace(/\.mp3$/i, '')
+  artistEl.textContent = '--'
+  $('total-time').textContent = convertDuration(duration)
+  updatePlayButton(isPlaying)
+  updateCoverRotation(isPlaying)
+
+  // 重置封面为placeholder
+  coverWrapper.innerHTML = '<div class="cover-placeholder"><i class="fas fa-music"></i></div>'
+
+  // 加载封面
+  loadCover()
+  // 尝试读取标签显示艺术家和专辑
+  readTrackMeta(currentTrack.path)
+}
+
+const updatePlayButton = (playing) => {
+  const btn = $('play-pause-button')
+  const icon = btn.querySelector('i')
+  if (playing) {
+    icon.classList.remove('fa-play')
+    icon.classList.add('fa-pause')
+  } else {
+    icon.classList.remove('fa-pause')
+    icon.classList.add('fa-play')
+  }
+}
+
+const updateCoverRotation = (playing) => {
+  const wrapper = document.querySelector('.cover-wrapper')
+  if (playing) {
+    wrapper.classList.add('playing')
+  } else {
+    wrapper.classList.remove('playing')
+  }
+}
+
+// ========================= 进度条更新 =========================
+const updateProgressHTML = (currentTime, duration) => {
+  const progress = duration ? Math.floor(currentTime / duration * 100) : 0
+  const bar = $('player-progress')
+  bar.style.width = progress + '%'
+  $('current-time').textContent = convertDuration(currentTime)
+  if (duration) {
+    $('total-time').textContent = convertDuration(duration)
+  }
+}
+
+// ========================= 播放控制 =========================
+const playTrack = (id) => {
+  const currentTracks = getCurrentTracks()
+  const track = currentTracks.find(t => t.id === id)
+  if (!track) return
+
+  if (currentTrack && currentTrack.path === track.path) {
+    // 继续播放
+    musicAudio.play()
+    isPlaying = true
+    updatePlayButton(true)
+    updateCoverRotation(true)
+    renderListHTML(getCurrentTracks(), true) // 刷新列表图标
+    return
+  }
+
+  // 播放新歌
+  currentTrack = track
+  musicAudio.src = track.path
+  musicAudio.play()
+  isPlaying = true
+  updatePlayButton(true)
+  updateCoverRotation(true)
+  renderListHTML(getCurrentTracks(), true) // 刷新列表图标
+  savePlaybackState()
+}
+
+const pauseTrack = () => {
+  musicAudio.pause()
+  isPlaying = false
+  updatePlayButton(false)
+  updateCoverRotation(false)
+  renderListHTML(getCurrentTracks(), true) // 刷新列表图标
+}
+
+// ========================= 封面与标签读取 =========================
+const setPlayerCover = (src) => {
+  const coverWrapper = document.querySelector('.cover-wrapper')
+  if (coverWrapper) {
+    coverWrapper.innerHTML = `<img src="${src}" alt="cover" id="current-cover">`
+  }
+}
+
+const readMP3Cover = (filePath) => {
+  jsmediatags.read(filePath, {
+    onSuccess: function (tag) {
+      const { picture } = tag.tags
+      if (picture) {
+        const base64String = arrayBufferToBase64(picture.data)
+        const coverImageSrc = `data:${picture.format};base64,${base64String}`
+        setPlayerCover(coverImageSrc)
+        updateListCover(currentTrack.id, coverImageSrc)
+      } else {
+        fetchSongInfo().then(songInfo => {
+          return getCover(songInfo.id)
+        }).then(cover => {
+          setPlayerCover(cover)
+          updateListCover(currentTrack.id, cover)
+        }).catch(() => {
+          // 保持placeholder
+        })
       }
     },
     onError: function (error) {
-      console.error('Error reading MP3 tags:', error);
+      console.error('Error reading MP3 tags:', error)
     }
-  });
-};
+  })
+}
 
-// 辅助函数：将 ArrayBuffer 转换为 Base64 字符串
 const arrayBufferToBase64 = (buffer) => {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  const len = bytes.byteLength;
+  let binary = ''
+  const bytes = new Uint8Array(buffer)
+  const len = bytes.byteLength
   for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
+    binary += String.fromCharCode(bytes[i])
   }
-  return window.btoa(binary);
-};
-
-
-//加载封面
-const loadCover = async ()=>{
-  // 调用 readMP3Cover 函数来读取 MP3 文件的封面图像
-  const filePath = currentTrack.path;
-  readMP3Cover(filePath);
+  return window.btoa(binary)
 }
 
-//加载歌词
-const loadLrc = async ()=>{
-  currentLyricIndex = 0 //重置当前歌词索引
-  const lyricsPath = currentTrack.path.replace('.mp3', '.lrc');
-  return  await parseLyricsFile(lyricsPath);//拿到解析的歌词
-  //console.log('拿到解析的歌词', curLyrics)
+const updateListCover = (trackId, src) => {
+  const placeholder = document.querySelector(`[data-cover-id="${trackId}"]`)
+  if (placeholder) {
+    placeholder.outerHTML = `<img src="${src}" alt="" data-cover-id="${trackId}">`
+  }
 }
 
-// 判断 musicAudio 是否正在播放
-const isMusicPlaying = () => {
-  return !musicAudio.paused;
-};
+const loadCover = () => {
+  if (!currentTrack) return
+  readMP3Cover(currentTrack.path)
+}
 
-//通过ipcRenderer对象监听名为'getTracks'的事件。
-// 当接收到该事件时，将音乐数据赋值给allTracks变量，并调用renderListHTML函数渲染音乐列表的HTML代码。
-ipcRenderer.on('getTracks', (event, tracks) => {
-
-  allTracks = tracks
-
-  console.log('receive tracks', tracks)
-
-  renderListHTML(tracks)
-
-  //刷新后，有正在播放的歌曲，改变歌曲播放图标
-  console.log("正在播放？" + isMusicPlaying())
-  console.log("currentTrack？" + currentTrack)
-  if(currentTrack && isMusicPlaying()){
-    const tracksList = document.getElementById('tracksList');
-    const currentTrackElement = tracksList.querySelector(`[data-id="${currentTrack.id}"]`);
-
-    if (currentTrackElement) {
-      currentTrackElement.classList.replace('fa-play', 'fa-pause');
+const readTrackMeta = (filePath) => {
+  jsmediatags.read(filePath, {
+    onSuccess: function (tag) {
+      const { title, artist, album } = tag.tags
+      if (artist) $('current-artist').textContent = artist
+      // 更新列表中的艺术家和专辑
+      const row = document.querySelector(`.track-row[data-id="${currentTrack.id}"]`)
+      if (row) {
+        const artistCell = row.querySelector('.track-artist')
+        const albumCell = row.querySelector('.track-album')
+        if (artistCell && artist) artistCell.textContent = artist
+        if (albumCell && album) albumCell.textContent = album
+      }
+    },
+    onError: function () {
+      // 静默失败
     }
-  }
-
-
-})
-
-// ===============================频谱图渲染==================================================
-let analyser;
-let dataArray;
-let bufferLength;
-
-// 创建 AnalyserNode 对象和设置参数
-const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-analyser = audioContext.createAnalyser();
-const source = audioContext.createMediaElementSource(musicAudio);
-
-// 创建 AnalyserNode 对象和设置参数
-function createAnalyser() {
-
-  source.connect(analyser);
-  analyser.connect(audioContext.destination);
-
-  analyser.fftSize = 2048; // FFT 大小，控制频谱的精度
-  bufferLength = analyser.frequencyBinCount;
-  dataArray = new Uint8Array(bufferLength);
+  })
 }
 
-// 更新频谱图
-function updateSpectrumCtx() {
-  analyser.getByteFrequencyData(dataArray);
+// ========================= 歌词 =========================
+const loadLrc = async () => {
+  currentLyricIndex = 0
+  const lyricsPath = currentTrack.path.replace(/\.mp3$/i, '.lrc')
+  return await parseLyricsFile(lyricsPath)
+}
 
-  const musicSpectrumCanvas = document.getElementById('music-spectrum');
-  const musicSpectrumCtx = musicSpectrumCanvas.getContext('2d');
+// ========================= 频谱图 =========================
+let analyser
+let dataArray
+let bufferLength
+let audioContext
+let sourceConnected = false
 
-  musicSpectrumCtx.clearRect(0, 0, musicSpectrumCanvas.width, musicSpectrumCanvas.height);
+const initAudioContext = () => {
+  if (audioContext) return
+  audioContext = new (window.AudioContext || window.webkitAudioContext)()
+  analyser = audioContext.createAnalyser()
+  const source = audioContext.createMediaElementSource(musicAudio)
+  source.connect(analyser)
+  analyser.connect(audioContext.destination)
+  analyser.fftSize = 2048
+  bufferLength = analyser.frequencyBinCount
+  dataArray = new Uint8Array(bufferLength)
+  sourceConnected = true
+}
 
-  const barWidth = (musicSpectrumCanvas.width / bufferLength) * 20;
-  let barHeight;
-  let x = 0;
+const updateSpectrumCtx = () => {
+  if (!analyser) return
+  analyser.getByteFrequencyData(dataArray)
 
-  for (let i = 0; i < bufferLength; i++) {
-    barHeight = dataArray[i] / 1.5;
+  const canvas = document.getElementById('music-spectrum')
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  const w = canvas.clientWidth || canvas.width
+  const h = canvas.clientHeight || canvas.height
+  ctx.clearRect(0, 0, w, h)
 
-    musicSpectrumCtx.fillStyle = '#8e8686';
+  // 迷你频谱条（根据宽度自适应条数）
+  const bars = Math.min(64, Math.max(24, Math.floor(w / 4)))
+  const step = Math.floor(bufferLength / bars)
+  const barW = (w / bars) * 0.65
+  const gap = (w / bars) * 0.35
 
-    musicSpectrumCtx.fillRect(x, musicSpectrumCanvas.height - barHeight/2, barWidth, barHeight);
+  for (let i = 0; i < bars; i++) {
+    let sum = 0
+    for (let j = 0; j < step; j++) {
+      sum += dataArray[i * step + j]
+    }
+    const avg = sum / step
+    const barHeight = Math.max(1, (avg / 255) * h)
 
-    x += barWidth + 3;
+    const x = i * (barW + gap) + gap / 2
+    const y = h - barHeight
+
+    ctx.fillStyle = 'rgb(231, 76, 60)'
+    ctx.fillRect(x, y, barW, barHeight)
   }
 }
 
-// ===============================频谱图渲染==================================================
-
-
-//当音频元数据加载完成时，调用renderPlayerHTML函数渲染播放器状态的HTML代码。
+// ========================= 音频事件监听 =========================
 musicAudio.addEventListener('loadedmetadata', async () => {
-  //渲染播放器状态
   renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
-
-  // 创建 AnalyserNode 对象和设置参数
-  createAnalyser();
-
-  //加载歌词
-  curLyrics = await loadLrc();
-
-  //在这里调用updateProgressHTML函数
-  updateProgressHTML(musicAudio.currentTime, musicAudio.duration);
-
-  //加载封面
-  loadCover();
-
+  if (!sourceConnected) initAudioContext()
+  updateProgressHTML(musicAudio.currentTime, musicAudio.duration)
+  curLyrics = await loadLrc()
 })
 
-
-// 当音频播放进度更新时，调用 updateProgressHTML 函数更新播放进度的 HTML 代码。
 musicAudio.addEventListener('timeupdate', () => {
-  // 更新播放器状态
-  updateProgressHTML(musicAudio.currentTime, musicAudio.duration);
+  updateProgressHTML(musicAudio.currentTime, musicAudio.duration)
+  updateSpectrumCtx()
 
-
-  // 更新频谱图
-  updateSpectrumCtx();
-
-
-  // 更新歌词的滚动显示
+  // 歌词处理（简化版，保留在播放器状态中）
   if (curLyrics && curLyrics.length) {
-    const currentLyricElement = $('current-lyric');
-    const currentLyricTime = currentLyricIndex>=curLyrics.length  ? musicAudio.duration:curLyrics[currentLyricIndex].time;
+    const currentLyricTime = currentLyricIndex >= curLyrics.length
+      ? musicAudio.duration
+      : curLyrics[currentLyricIndex].time
 
     if (musicAudio.currentTime >= currentLyricTime) {
-      //currentLyricElement.textContent = curLyrics[currentLyricIndex].text;
-
-      //=============================================变色计算=======================================
-      // 在这里计算这句的延时--设置每个字母的颜色变化
       try {
-        currentLyricIndexAnimationDuration = (curLyrics[currentLyricIndex+1].time - curLyrics[currentLyricIndex].time); // 动画持续时间，单位秒
-      } catch (exception) {
-        // 处理异常情况
-        currentLyricIndexAnimationDuration = musicAudio.duration - curLyrics[currentLyricIndex].time;
+        currentLyricIndexAnimationDuration = (curLyrics[currentLyricIndex + 1].time - curLyrics[currentLyricIndex].time)
+      } catch (e) {
+        currentLyricIndexAnimationDuration = musicAudio.duration - curLyrics[currentLyricIndex].time
       }
 
-      // 构建当前歌词的 HTML 代码，每个字母都包裹在一个 <span> 元素中
-      const currentLyricHTML = curLyrics[currentLyricIndex].text
-          .split('')
-          .map((char, index) => {
-            if (char === ' ') {
-              return ' '; // 保留空格
-            }
-            return `<span class="char-${index}">${char}</span>`;
-          })
-          .join('');
+      const currentText = curLyrics[currentLyricIndex].text
+      const nextLyricText = curLyrics[currentLyricIndex + 1] ? curLyrics[currentLyricIndex + 1].text : ''
+      const duration = currentLyricIndexAnimationDuration
 
-      const nextLyricText = curLyrics[currentLyricIndex+1] ? curLyrics[currentLyricIndex+1].text : '';
-      const lyricDisplayText = currentLyricHTML + '<br>' + nextLyricText;
-
-      // 更新当前歌词的 HTML
-      currentLyricElement.innerHTML = lyricDisplayText;
-
-      // 获取当前歌词中每个字母的 <span> 元素
-      const currentLyricLetters = currentLyricElement.querySelectorAll('span');
-
-
-      const letterDelay = currentLyricIndexAnimationDuration / currentLyricLetters.length; // 计算每个字母的延迟时间
-
-      currentLyricLetters.forEach((letter, index) => {
-        letter.style.animation = `colorChange ${currentLyricIndexAnimationDuration}s linear infinite`;
-        letter.style.animationDelay = `${index * letterDelay}s`;
-      });
-      //=============================================变色计算=======================================
-
-      // 发送当前歌词给桌面歌词窗口
-      ipcRenderer.send('updateDeskLyric', currentLyricElement.innerHTML);
-
-      curLyricDisplayText = currentLyricElement.innerHTML;//设置到环境变量中，歌词点击显示&隐藏时 触发一次发送消息
-
-      currentLyricIndex++;
-      currentLyricElement.scrollIntoView({behavior: 'smooth', block: 'center'});
+      curLyricDisplayText = currentText
+      ipcRenderer.send('updateDeskLyric', {
+        text: currentText,
+        duration: duration,
+        next: nextLyricText
+      })
+      currentLyricIndex++
     }
   }
+})
 
-
-});
-
-
-// 歌曲播放完成事件
 musicAudio.addEventListener('ended', async () => {
-
+  const currentTracks = getCurrentTracks()
   if (isLooping) {
-    // 单曲循环逻辑
-    musicAudio.currentTime = 0;
-    musicAudio.play();
-    await loadLrc();//自然播放完成状态后 刷新歌词  否则会有问题
+    musicAudio.currentTime = 0
+    musicAudio.play()
+    await loadLrc()
   } else if (isRandom) {
-    // 随机播放逻辑
-    const randomIndex = Math.floor(Math.random() * allTracks.length);
-    currentTrack = allTracks[randomIndex];
-    musicAudio.src = currentTrack.path;
-    musicAudio.play();
-
-    // 还原上次播放图标为未在播放
-    const resetIconEle = document.querySelector('.fa-pause')
-    if (resetIconEle) {
-      resetIconEle.classList.replace('fa-pause', 'fa-play')
-    }
-
-    //把正在播放的歌曲图标切换状态
-    const tracksList = document.getElementById('tracksList');
-    const currentTrackElement = tracksList.querySelector(`[data-id="${currentTrack.id}"]`);
-    if (currentTrackElement) {
-      currentTrackElement.classList.replace('fa-play', 'fa-pause');
-    }
-
-    renderPlayerHTML(currentTrack.fileName, musicAudio.duration);
-  }else{
-
-    // 歌曲播放完成后的逻辑
-    const currentIndex = allTracks.findIndex(track => track.id === currentTrack.id)
-    const nextIndex = (currentIndex + 1) % allTracks.length
-    currentTrack = allTracks[nextIndex]
-
+    const randomIndex = Math.floor(Math.random() * currentTracks.length)
+    currentTrack = currentTracks[randomIndex]
     musicAudio.src = currentTrack.path
     musicAudio.play()
-
-    // 还原上次播放图标为未在播放
-    const resetIconEle = document.querySelector('.fa-pause')
-    if (resetIconEle) {
-      resetIconEle.classList.replace('fa-pause', 'fa-play')
-    }
-
-    // 替换最新播放图标
-    const tracksList = document.getElementById('tracksList');
-    const currentTrackElement = tracksList.querySelector(`[data-id="${currentTrack.id}"]`);
-    if (currentTrackElement) {
-      currentTrackElement.classList.replace('fa-play', 'fa-pause');
-    }
-
     renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
+    renderListHTML(getCurrentTracks())
+  } else {
+    const currentIndex = currentTracks.findIndex(track => track.id === currentTrack.id)
+    const nextIndex = (currentIndex + 1) % currentTracks.length
+    currentTrack = currentTracks[nextIndex]
+    musicAudio.src = currentTrack.path
+    musicAudio.play()
+    renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
+    renderListHTML(getCurrentTracks())
   }
-
-
 })
 
-// 点击音乐列表中的播放图标或暂停图标时，根据图标状态进行音乐的播放或暂停，并更新图标状态。
-// 点击音乐列表中的垃圾桶图标时，通过ipcRenderer对象发送一个名为'delete-track'的事件，用于删除对应的音乐。
-$('tracksList').addEventListener('click', async (event) => {
-  event.preventDefault()
-  const { dataset, classList } = event.target
-  const id = dataset && dataset.id
-  if(id && classList.contains('fa-play')) {
-    // 这里要开始播放音乐
-    if (currentTrack && currentTrack.id === id) {
-      // 继续播放音乐
-      musicAudio.play()
-    } else {
-      // 播放新的歌曲，注意还原之前的图标
-      currentTrack = allTracks.find(track => track.id === id)
-      musicAudio.src = currentTrack.path
-      musicAudio.play()
-      const resetIconEle = document.querySelector('.fa-pause')
-      if (resetIconEle) {
-        resetIconEle.classList.replace('fa-pause', 'fa-play')
-      }
-    }
-    classList.replace('fa-play', 'fa-pause')
+musicAudio.addEventListener('play', () => {
+  isPlaying = true
+  updatePlayButton(true)
+  updateCoverRotation(true)
+  renderListHTML(getCurrentTracks(), true)
+})
 
-    //加载歌词
-    //curLyrics = await loadLrc();
+musicAudio.addEventListener('pause', () => {
+  isPlaying = false
+  updatePlayButton(false)
+  updateCoverRotation(false)
+  renderListHTML(getCurrentTracks(), true)
+})
 
-  } else if (id && classList.contains('fa-pause')) {
-    // 处理暂停逻辑
+// ========================= 按钮事件绑定 =========================
+
+// 播放/暂停按钮
+$('play-pause-button').addEventListener('click', () => {
+  const currentTracks = getCurrentTracks()
+  if (!currentTracks || !currentTracks.length) return
+  if (!currentTrack) {
+    playTrack(currentTracks[0].id)
+  } else if (isPlaying) {
+    pauseTrack()
+  } else {
+    musicAudio.play()
+  }
+})
+
+// 上一曲
+$('previous-button').addEventListener('click', () => {
+  const currentTracks = getCurrentTracks()
+  if (!currentTracks || !currentTracks.length || !currentTrack) return
+  const currentIndex = currentTracks.findIndex(track => track.id === currentTrack.id)
+  const previousIndex = (currentIndex - 1 + currentTracks.length) % currentTracks.length
+  playTrack(currentTracks[previousIndex].id)
+})
+
+// 下一曲
+$('next-button').addEventListener('click', () => {
+  const currentTracks = getCurrentTracks()
+  if (!currentTracks || !currentTracks.length || !currentTrack) return
+  const currentIndex = currentTracks.findIndex(track => track.id === currentTrack.id)
+  const nextIndex = (currentIndex + 1) % currentTracks.length
+  playTrack(currentTracks[nextIndex].id)
+})
+
+// 停止
+const stopButton = document.getElementById('stop-button')
+if (stopButton) {
+  stopButton.addEventListener('click', () => {
+    const currentTracks = getCurrentTracks()
+    if (!currentTracks || !currentTracks.length) return
     musicAudio.pause()
-    classList.replace('fa-pause', 'fa-play')
-  } else if (id && classList.contains('fa-trash-alt')) {
-    // 发送事件 删除这条音乐
-    ipcRenderer.send('delete-track', id)
-  }
-})
-
-//上一曲
-$('previous-button').addEventListener('click', async () => {
-  if( allTracks && allTracks.length && currentTrack){
-    const currentIndex = allTracks.findIndex(track => track.id === currentTrack.id)
-    const previousIndex = (currentIndex - 1 + allTracks.length) % allTracks.length
-    currentTrack = allTracks[previousIndex]
-    musicAudio.src = currentTrack.path
-    musicAudio.play()
-
-    // 还原上次播放图标
-    const resetIconEle = document.querySelector('.fa-pause')
-    console.log("下一曲resetIconEle",resetIconEle);
-    if (resetIconEle) {
-      resetIconEle.classList.replace('fa-pause', 'fa-play')
-    }
-
-    // 替换最新播放图标
-    const tracksList = document.getElementById('tracksList');
-    const currentTrackElement = tracksList.querySelector(`[data-id="${currentTrack.id}"]`);
-    if (currentTrackElement) {
-      currentTrackElement.classList.replace('fa-play', 'fa-pause');
-    }
-
-    //加载歌词
-    //curLyrics = await loadLrc();
-
-    renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
-  }
-
-
-})
-
-//下一曲
-$('next-button').addEventListener('click', async () => {
-  if( allTracks && allTracks.length && currentTrack) {
-    const currentIndex = allTracks.findIndex(track => track.id === currentTrack.id)
-    const nextIndex = (currentIndex + 1) % allTracks.length
-    currentTrack = allTracks[nextIndex]
-    musicAudio.src = currentTrack.path
-    musicAudio.play()
-
-    // 还原上次播放图标
-    const resetIconEle = document.querySelector('.fa-pause')
-    console.log("下一曲resetIconEle", resetIconEle);
-    if (resetIconEle) {
-      resetIconEle.classList.replace('fa-pause', 'fa-play')
-    }
-
-    // 替换最新播放图标
-    const tracksList = document.getElementById('tracksList');
-    const currentTrackElement = tracksList.querySelector(`[data-id="${currentTrack.id}"]`);
-    if (currentTrackElement) {
-      currentTrackElement.classList.replace('fa-play', 'fa-pause');
-    }
-
-    //加载歌词
-    //curLyrics = await loadLrc();
-
-
-    renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
-  }
-})
-
-
-// 添加进度条事件监听器
-const progressBar = $('progress-bar')
-$('progress-bar').addEventListener('click', (event) => {
-  // 计算鼠标点击位置相对于进度条的百分比位置
-  const clickPosition = event.clientX - progressBar.getBoundingClientRect().left;
-  const progressBarWidth = progressBar.clientWidth;
-  const percentage = clickPosition / progressBarWidth;
-
-  // 计算音乐的播放时间
-  const duration = musicAudio.duration;
-  const currentTime = duration * percentage;
-
-  // 设置音乐的播放时间
-  musicAudio.currentTime = currentTime;
-
-  // 更新进度条的显示
-  updateProgressHTML(currentTime, duration);
-});
-
-
-//根据歌曲来获取歌曲信息，包含标签和网易云id等
-const fetchSongInfo = async()=> {
-  const mm = require('music-metadata');
-  const metadata = await mm.parseFile(currentTrack.path);
-  const {common} = metadata;
-
-  // 获取歌曲名和歌手名
-  const songTitle = common.title;
-  const artistName = common.artist;
-
-  console.log('歌曲名:', songTitle);
-  console.log('歌手名:', artistName);
-
-  // 如果文件不存在,则调用网易云音乐API获取歌词
-  const songInfo = await getSong(songTitle, artistName);
-  return songInfo;
+    musicAudio.currentTime = 0
+    isPlaying = false
+    currentTrack = null
+    curLyrics = null
+    updatePlayButton(false)
+    updateCoverRotation(false)
+    renderPlayerHTML(null, 0)
+    renderListHTML(getCurrentTracks())
+  })
 }
 
+// 进度条点击
+$('progress-bar').addEventListener('click', (event) => {
+  if (!musicAudio.duration) return
+  const rect = $('progress-bar').getBoundingClientRect()
+  const percentage = (event.clientX - rect.left) / rect.width
+  musicAudio.currentTime = musicAudio.duration * percentage
+  updateProgressHTML(musicAudio.currentTime, musicAudio.duration)
+})
 
-//从文件读取歌词 || 从网易云读取歌词
-const parseLyricsFile = async (path) => {
-  const fs = require('fs');
-  const jschardet = require('jschardet');
-  const iconv = require('iconv-lite');
+// 音量控制
+let currentVolume = 0.7
+musicAudio.volume = currentVolume
 
-  try {
-    // 检查文件是否存在
-    if (fs.existsSync(path)) {
-      const buffer = fs.readFileSync(path);
-      const detectedEncoding = jschardet.detect(buffer);
-      const encoding = detectedEncoding.encoding;
-      console.log('LRC encoding:', encoding);
-
-      const lyricsContent = iconv.decode(buffer, encoding);
-      return parseLyrics(lyricsContent);
-    }
-    const songInfo = await fetchSongInfo();
-    const lyrics = await getLyrics(songInfo.id);
-    // 将歌词写入文件
-    fs.writeFileSync(path, lyrics);
-
-    return parseLyrics(lyrics);
-
-  } catch (error) {
-    console.error('Error reading lyrics file:', error);
-    return [];
+const updateVolumeUI = (vol) => {
+  $('volume-fill').style.width = (vol * 100) + '%'
+  const muteBtn = $('mute-button')
+  const muteIcon = muteBtn.querySelector('i')
+  if (vol === 0) {
+    muteIcon.className = 'fas fa-volume-mute'
+  } else if (vol < 0.5) {
+    muteIcon.className = 'fas fa-volume-down'
+  } else {
+    muteIcon.className = 'fas fa-volume-up'
   }
-};
+}
 
-// 从网易云音乐API获取歌曲ID
-const getSong = async (songName, artistName) => {
-  const searchUrl = `http://music.163.com/api/search/get/?s=${encodeURIComponent(`${artistName} ${songName}`)}&limit=1&type=1&offset=0`;
-  const response = await fetch(searchUrl);
-  const data = await response.json();
+updateVolumeUI(currentVolume)
 
-  if (data.code === 200 && data.result.songs.length > 0) {
-    return data.result.songs[0];
+$('volume-slider').addEventListener('click', (event) => {
+  const rect = $('volume-slider').getBoundingClientRect()
+  const percentage = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
+  currentVolume = percentage
+  musicAudio.volume = currentVolume
+  updateVolumeUI(currentVolume)
+})
+
+let isMuted = false
+let preMuteVolume = 0.7
+
+$('mute-button').addEventListener('click', () => {
+  if (isMuted) {
+    musicAudio.volume = preMuteVolume
+    currentVolume = preMuteVolume
+    isMuted = false
+  } else {
+    preMuteVolume = currentVolume
+    musicAudio.volume = 0
+    currentVolume = 0
+    isMuted = true
   }
+  updateVolumeUI(currentVolume)
+})
 
-  throw new Error('Failed to get song List');
-};
+// 单曲循环
+const loopButton = $('loop-button')
+let isLooping = false
 
-// 从网易云音乐API获取歌词
-const getLyrics = async (songId) => {
-  const lyricsUrl = `http://music.163.com/api/song/lyric?os=osx&id=${songId}&lv=-1&kv=-1&tv=-1`;
-  const response = await fetch(lyricsUrl);
-  const data = await response.json();
-  console.log('从网易云音乐API获取歌词', data)
-  if (data.code === 200 && data.lrc && data.lrc.lyric) {
-    return data.lrc.lyric;
+loopButton.addEventListener('click', () => {
+  isLooping = !isLooping
+  loopButton.classList.toggle('active', isLooping)
+  ipcRenderer.send('isLooping', isLooping)
+  if (isLooping && isRandom) {
+    isRandom = false
+    randomButton.classList.remove('active')
+    ipcRenderer.send('isRandom', false)
   }
+})
 
-  throw new Error('Failed to get lyrics');
-};
+// 随机播放
+const randomButton = $('random-button')
+let isRandom = false
 
-// 从网易云音乐API获取专辑图
-const getCover = async (songId) => {
-  const detailUrl = `http://music.163.com/api/song/detail?id=${songId}&ids=[${songId}]&csrf_token=`;
-  const response = await fetch(detailUrl);
-  const data = await response.json();
-
-  console.log('从网易云音乐API获取专辑图',data)
-  console.log('从网易云音乐API获取专辑图',data.songs)
-
-  if (data.code === 200 && data.songs && data.songs[0].album.blurPicUrl) {
-    return data.songs[0].album.blurPicUrl;
+randomButton.addEventListener('click', () => {
+  isRandom = !isRandom
+  randomButton.classList.toggle('active', isRandom)
+  ipcRenderer.send('isRandom', isRandom)
+  if (isRandom && isLooping) {
+    isLooping = false
+    loopButton.classList.remove('active')
+    ipcRenderer.send('isLooping', false)
   }
+})
 
-  throw new Error('Failed to get Cover');
-};
-
-
-// 歌词解析为时间+文本
-const parseLyrics = (lyricsText) => {
-  // 解析歌词文本，返回歌词数据
-  // 将歌词文本按行分割成数组
-  // 遍历每一行歌词，提取时间和文本信息
-  // 返回包含时间和歌词文本的数组
-  const lines = lyricsText.toString().split('\n');
-  const lyrics = [];
-  let timeRegex = null;
-
-  for (let line of lines) {
-    const timeMatches = line.match(/\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?]/);
-    const metadataMatches = line.match(/^\[([^\]]+)\]/);
-    //匹配到时间戳
-    if (timeMatches) {
-      const minutes = parseInt(timeMatches[1]);
-      const seconds = parseInt(timeMatches[2]);
-      let milliseconds = 0;
-      if (timeMatches[3]) {
-        milliseconds = parseInt(timeMatches[3]);
-        if (timeMatches[3].length === 2) {
-          milliseconds *= 10; // 将两位数的毫秒转换为三位数
-        }
-      }
-      const time = minutes * 60 + seconds + milliseconds / 1000;
-      const text = line.replace(/\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?]/, '').trim();
-
-      if (time && text) {
-        lyrics.push({ time, text });
-      }
-
-    } else if(metadataMatches){//匹配到标签
-
-        const text = metadataMatches[1].trim();
-        if (text) {
-          lyrics.push({ "time": 0.00,  "text": text});
-        }
-
-    } else {//其他默认处理
-      //console.log("其他默认处理",line)
-      // Fallback for unrecognized lines (treat as plain text)
-      if(line.trim()){
-        lyrics.push({ "time": 0.00+lyrics.length,  "text": line.trim()});
-      }
-
-    }
-  }
-
-  console.log("时间+歌词", lyrics);
-  return lyrics;
-};
-
-
-
-// 监听 Dark Mode 按钮的点击事件
+// 暗色模式
 $('dark-mode-button').addEventListener('click', () => {
-  const body = document.body;
+  const body = document.body
+  const icon = $('dark-mode-button').querySelector('i')
+  body.classList.toggle('dark-mode')
 
-  const icon = document.querySelector('#dark-mode-button i');
-
-  // 切换深色模式的 CSS 类
-  body.classList.toggle('dark-mode');
-
-  // 切换图标的类名
   if (body.classList.contains('dark-mode')) {
-    icon.classList.remove('fa-moon');
-    icon.classList.add('fa-sun');
-
-    $('dark-mode-button').classList.remove('btn-outline-secondary');
-    $('dark-mode-button').classList.add('btn-secondary');
-
-    $('dark-mode-button').title = '亮色模式';
+    icon.classList.remove('fa-moon')
+    icon.classList.add('fa-sun')
+    $('dark-mode-button').title = '亮色模式'
   } else {
-    icon.classList.remove('fa-sun');
-    icon.classList.add('fa-moon');
-
-    $('dark-mode-button').classList.remove('btn-secondary');
-    $('dark-mode-button').classList.add('btn-outline-secondary');
-
-    $('dark-mode-button').title = '暗色模式';
+    icon.classList.remove('fa-sun')
+    icon.classList.add('fa-moon')
+    $('dark-mode-button').title = '暗色模式'
   }
 
-  // 在主进程中发送消息通知切换主题
-  ipcRenderer.send('toggle-dark-mode', body.classList.contains('dark-mode'));
-});
-
-//"add-music-button"元素添加了一个点击事件监听器。当按钮被点击时，通过ipcRenderer对象发送一个名为'add-music-window'的事件，用于打开添加音乐窗口。
-$('add-music-button').addEventListener('click', () => {
-  const body = document.body;
-  ipcRenderer.send('add-music-window', body.classList.contains('dark-mode'))
+  ipcRenderer.send('toggle-dark-mode', body.classList.contains('dark-mode'))
 })
 
-// 监听来自主进程的 apply-dark-mode 消息
 ipcRenderer.on('apply-dark-mode', (event, isDarkMode) => {
-  // 在这里根据 isDarkMode 变量应用深色模式的样式
-  const body = document.body;
+  const body = document.body
+  const icon = $('dark-mode-button').querySelector('i')
   if (isDarkMode) {
-    body.classList.add('dark-mode');
+    body.classList.add('dark-mode')
+    icon.classList.remove('fa-moon')
+    icon.classList.add('fa-sun')
+    $('dark-mode-button').title = '亮色模式'
   } else {
-    body.classList.remove('dark-mode');
+    body.classList.remove('dark-mode')
+    icon.classList.remove('fa-sun')
+    icon.classList.add('fa-moon')
+    $('dark-mode-button').title = '暗色模式'
   }
-});
-
-
-// 停止按钮点击事件
-$('stop-button').addEventListener('click', () => {
-
-  if(allTracks && allTracks.length) {
-    musicAudio.pause(); // 暂停音乐播放
-    musicAudio.currentTime = 0; // 将音频的当前时间设置为0，停止播放
-
-    // 还原上次播放图标
-    const resetIconEle = document.querySelector('.fa-pause')
-    console.log("下一曲resetIconEle", resetIconEle);
-    if (resetIconEle) {
-      resetIconEle.classList.replace('fa-pause', 'fa-play')
-    }
-
-    //清空当前歌词
-    curLyrics = null;
-
-    //清空当前音轨
-    currentTrack = null;
-
-    //清空播放信息
-    const player = $('player-status')
-    player.innerHTML = '';
-  }
-
 })
-
-
-// 清空歌单按钮点击事件
-$('clean-list-button').addEventListener('click', () => {
-  if(allTracks && allTracks.length){
-    $('stop-button').click();//停止播放
-
-    allTracks = [] // 清空歌单数据
-
-    renderListHTML(allTracks) // 重新渲染空的音乐列表
-
-    ipcRenderer.send('clean-tracks');//发送消息 清空缓存配置文件
-  }
-
-})
-
-
-let isLyricWindowOpen = false; // 标记歌词窗口是否已打开
-
 
 // 桌面歌词
-document.getElementById('show-lrc').addEventListener('click', () => {
+let isLyricWindowOpen = false
+$('show-lrc').addEventListener('click', () => {
   if (isLyricWindowOpen) {
-    // 关闭歌词窗口
-    ipcRenderer.send('closeLyricWindow');
+    ipcRenderer.send('closeLyricWindow')
   } else {
-    // 打开歌词窗口
-    ipcRenderer.send('showLyricWindow');
-    //设置到环境变量中，歌词点击显示&隐藏时 触发一次发送消息
-    ipcRenderer.send('updateDeskLyric', curLyricDisplayText?curLyricDisplayText:'歌词加载中...');
+    ipcRenderer.send('showLyricWindow')
+    ipcRenderer.send('updateDeskLyric', {
+      text: curLyricDisplayText || '歌词加载中...',
+      duration: 3,
+      next: ''
+    })
   }
-});
+})
 
-
-// 桌面歌词样式
 ipcRenderer.on('updateLyricWindowStatus', (event, isOpen) => {
-  isLyricWindowOpen = isOpen;
+  isLyricWindowOpen = isOpen
+  $('show-lrc').classList.toggle('active', isOpen)
+})
 
-  const showLrcButton = document.getElementById('show-lrc');
-  if (isOpen) {
-    //打开了
-    showLrcButton.classList.remove('btn-outline-secondary');
-    showLrcButton.classList.add('btn-secondary');
+// 添加歌曲
+$('add-music-button').addEventListener('click', () => {
+  ipcRenderer.send('add-music-window', document.body.classList.contains('dark-mode'), currentPlaylistId)
+})
 
-  } else {
-    //没打开
-    showLrcButton.classList.remove('btn-secondary');
-    showLrcButton.classList.add('btn-outline-secondary');
-
-  }
-});
-
-
-const loopButton = $('loop-button');
-const randomButton = $('random-button');
-let isLooping = false;
-let isRandom = false;
-
-// 单曲循环按钮点击事件
-loopButton.addEventListener('click', () => {
-  isLooping = !isLooping;
-  loopButton.classList.toggle('btn-secondary');
-  loopButton.classList.toggle('btn-outline-secondary');
-
-  if (isLooping) {
-    // 单曲循环逻辑 --发送消息&记录
-    ipcRenderer.send('isLooping',true);
-    ipcRenderer.send('isRandom',false);
-
-    // 取消随机播放
-    if (isRandom) {
-      isRandom = false;
-      randomButton.classList.remove('btn-secondary');
-      randomButton.classList.add('btn-outline-secondary');
-    }
-
-  } else {
-    // 取消单曲循环逻辑  --发送消息&记录
-    ipcRenderer.send('isLooping',false);
-  }
-});
-
-// 随机播放按钮点击事件
-randomButton.addEventListener('click', () => {
-  isRandom = !isRandom;
-  randomButton.classList.toggle('btn-secondary');
-  randomButton.classList.toggle('btn-outline-secondary');
-
-  if (isRandom) {
-    // 随机播放逻辑 --发送消息&记录
-    ipcRenderer.send('isRandom',true);
-    ipcRenderer.send('isLooping',false);
-
-    // 取消单曲循环
-    if (isLooping) {
-      isLooping = false;
-      loopButton.classList.remove('btn-secondary');
-      loopButton.classList.add('btn-outline-secondary');
-      musicAudio.loop = false;
-    }
-  }else{
-    // 取消随机播放逻辑 --发送消息&记录
-    ipcRenderer.send('isRandom',false);
-  }
-});
-
-//启动时恢复桌面歌词状态
+// 启动状态恢复
 ipcRenderer.on('LyricWindowStatus', (event, isOpen) => {
-  if(isOpen){
-    document.getElementById('show-lrc').click();
-  }
-});
+  if (isOpen) $('show-lrc').click()
+})
 
-//启动时恢复随机播放状态
 ipcRenderer.on('RandomStatus', (event, isOpen) => {
-  if(isOpen){
-    randomButton.click();
-  }
-});
+  if (isOpen) randomButton.click()
+})
 
-//启动时恢复单曲循环状态
 ipcRenderer.on('LoopStatus', (event, isOpen) => {
-  if(isOpen){
-    loopButton.click();
-  }
-});
+  if (isOpen) loopButton.click()
+})
 
-//启动时恢复暗色状态状态
 ipcRenderer.on('DarkStatus', (event, isOpen) => {
-  if(isOpen){
-    $('dark-mode-button').click();
+  if (isOpen) $('dark-mode-button').click()
+})
+
+// ========================= 网易云API =========================
+const fetchSongInfo = async () => {
+  const mm = require('music-metadata')
+  const metadata = await mm.parseFile(currentTrack.path)
+  const { common } = metadata
+  const songTitle = common.title || currentTrack.fileName.replace(/\.mp3$/i, '')
+  const artistName = common.artist || ''
+  const songInfo = await getSong(songTitle, artistName)
+  return songInfo
+}
+
+const getSong = async (songName, artistName) => {
+  const searchUrl = `http://music.163.com/api/search/get/?s=${encodeURIComponent(`${artistName} ${songName}`)}&limit=1&type=1&offset=0`
+  const response = await fetch(searchUrl)
+  const data = await response.json()
+  if (data.code === 200 && data.result.songs.length > 0) {
+    return data.result.songs[0]
   }
-});
+  throw new Error('Failed to get song List')
+}
 
+const getLyrics = async (songId) => {
+  const lyricsUrl = `http://music.163.com/api/song/lyric?os=osx&id=${songId}&lv=-1&kv=-1&tv=-1`
+  const response = await fetch(lyricsUrl)
+  const data = await response.json()
+  if (data.code === 200 && data.lrc && data.lrc.lyric) {
+    return data.lrc.lyric
+  }
+  throw new Error('Failed to get lyrics')
+}
 
+const getCover = async (songId) => {
+  const detailUrl = `http://music.163.com/api/song/detail?id=${songId}&ids=[${songId}]&csrf_token=`
+  const response = await fetch(detailUrl)
+  const data = await response.json()
+  if (data.code === 200 && data.songs && data.songs[0].album.blurPicUrl) {
+    return data.songs[0].album.blurPicUrl
+  }
+  throw new Error('Failed to get Cover')
+}
 
+// ========================= 歌词解析 =========================
+const parseLyricsFile = async (path) => {
+  const fs = require('fs')
+  const jschardet = require('jschardet')
+  const iconv = require('iconv-lite')
+
+  try {
+    if (fs.existsSync(path)) {
+      const buffer = fs.readFileSync(path)
+      const detectedEncoding = jschardet.detect(buffer)
+      const encoding = detectedEncoding.encoding
+      const lyricsContent = iconv.decode(buffer, encoding)
+      return parseLyrics(lyricsContent)
+    }
+    const songInfo = await fetchSongInfo()
+    const lyrics = await getLyrics(songInfo.id)
+    fs.writeFileSync(path, lyrics)
+    return parseLyrics(lyrics)
+  } catch (error) {
+    console.error('Error reading lyrics file:', error)
+    return []
+  }
+}
+
+const parseLyrics = (lyricsText) => {
+  const lines = lyricsText.toString().split('\n')
+  const lyrics = []
+
+  for (let line of lines) {
+    const timeMatches = line.match(/\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?]/)
+    const metadataMatches = line.match(/^\[([^\]]+)\]/)
+
+    if (timeMatches) {
+      const minutes = parseInt(timeMatches[1])
+      const seconds = parseInt(timeMatches[2])
+      let milliseconds = 0
+      if (timeMatches[3]) {
+        milliseconds = parseInt(timeMatches[3])
+        if (timeMatches[3].length === 2) milliseconds *= 10
+      }
+      const time = minutes * 60 + seconds + milliseconds / 1000
+      const text = line.replace(/\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?]/, '').trim()
+      if (time && text) lyrics.push({ time, text })
+    } else if (metadataMatches) {
+      const text = metadataMatches[1].trim()
+      if (text) lyrics.push({ time: 0.00, text })
+    } else {
+      if (line.trim()) lyrics.push({ time: 0.00 + lyrics.length, text: line.trim() })
+    }
+  }
+  return lyrics
+}
+
+// ========================= 歌单管理 =========================
+
+const renderPlaylists = () => {
+  const container = document.getElementById('playlists-container')
+  if (!container) return
+
+  const html = playlists.map(pl => {
+    const isActive = currentPlaylistId === pl.id
+    return `
+      <div class="playlist-item ${isActive ? 'active' : ''}" data-id="${pl.id}">
+        <i class="fas fa-list-music"></i>
+        <span class="playlist-name">${pl.name}</span>
+        <div class="playlist-actions">
+          <button class="btn-icon btn-edit-playlist" data-id="${pl.id}" title="重命名">
+            <i class="fas fa-pen"></i>
+          </button>
+          <button class="btn-icon btn-delete-playlist" data-id="${pl.id}" title="删除">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+      </div>
+    `
+  }).join('')
+
+  container.innerHTML = html
+
+  // 绑定歌单点击事件
+  container.querySelectorAll('.playlist-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      if (e.target.closest('.btn-icon')) return
+      const id = item.dataset.id
+      if (!id) return
+      switchPlaylist(id)
+    })
+  })
+
+  // 绑定删除歌单
+  container.querySelectorAll('.btn-delete-playlist').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const id = btn.dataset.id
+      const pl = playlists.find(p => p.id === id)
+      if (pl && confirm(`确定删除歌单「${pl.name}」吗？`)) {
+        ipcRenderer.send('delete-playlist', id)
+        if (currentPlaylistId === id) {
+          switchPlaylist('all')
+        }
+      }
+    })
+  })
+
+  // 绑定重命名歌单
+  container.querySelectorAll('.btn-edit-playlist').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const id = btn.dataset.id
+      const pl = playlists.find(p => p.id === id)
+      if (pl) showPlaylistDialog('rename', id, pl.name)
+    })
+  })
+}
+
+const switchPlaylist = (id) => {
+  currentPlaylistId = id
+  savePlaybackState()
+
+  // 更新侧边栏激活状态
+  document.querySelectorAll('.nav-item, .playlist-item').forEach(el => el.classList.remove('active'))
+  const activeEl = document.querySelector(`[data-id="${id}"]`)
+  if (activeEl) activeEl.classList.add('active')
+
+  // 更新页面标题
+  const pageTitle = document.querySelector('.page-title')
+  if (pageTitle) {
+    if (id === 'all') {
+      pageTitle.textContent = '默认'
+    } else {
+      const pl = playlists.find(p => p.id === id)
+      pageTitle.textContent = pl ? pl.name : '歌单'
+    }
+  }
+
+  // 重新渲染列表
+  renderListHTML(getCurrentTracks())
+}
+
+// ========================= 拖拽排序 =========================
+
+const bindDragEvents = () => {
+  const rows = document.querySelectorAll('.track-row')
+  rows.forEach(row => {
+    row.addEventListener('dragstart', handleDragStart)
+    row.addEventListener('dragover', handleDragOver)
+    row.addEventListener('dragleave', handleDragLeave)
+    row.addEventListener('drop', handleDrop)
+    row.addEventListener('dragend', handleDragEnd)
+  })
+}
+
+const handleDragStart = (e) => {
+  dragSrcEl = e.target.closest('.track-row')
+  if (!dragSrcEl) {
+    e.preventDefault()
+    return
+  }
+  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.setData('text/plain', dragSrcEl.dataset.id)
+  dragSrcEl.classList.add('dragging')
+}
+
+const handleDragOver = (e) => {
+  e.preventDefault()
+  e.dataTransfer.dropEffect = 'move'
+  const row = e.target.closest('.track-row')
+  if (row && row !== dragSrcEl) {
+    row.classList.add('drag-over')
+  }
+}
+
+const handleDragLeave = (e) => {
+  const row = e.target.closest('.track-row')
+  if (row) row.classList.remove('drag-over')
+}
+
+const handleDrop = (e) => {
+  e.preventDefault()
+  const dropTarget = e.target.closest('.track-row')
+  if (!dropTarget || !dragSrcEl || dropTarget === dragSrcEl) return
+
+  const draggedId = dragSrcEl.dataset.id
+  const targetId = dropTarget.dataset.id
+
+  // 获取当前 tracks
+  const currentTracks = getCurrentTracks()
+  const draggedIndex = currentTracks.findIndex(t => t.id === draggedId)
+  const targetIndex = currentTracks.findIndex(t => t.id === targetId)
+
+  if (draggedIndex === -1 || targetIndex === -1) return
+
+  // 如果是全部歌曲，需要重新排序当前歌单的 tracks
+  if (currentPlaylistId === 'all') {
+    const playlist = playlists.find(p => p.id === 'all')
+    if (playlist) {
+      const [moved] = playlist.tracks.splice(draggedIndex, 1)
+      playlist.tracks.splice(targetIndex, 0, moved)
+      // 保存到 store
+      ipcRenderer.send('reorder-tracks', { playlistId: 'all', trackIds: playlist.tracks.map(t => t.id) })
+    }
+  } else {
+    // 如果是歌单，重新排序歌单的 tracks
+    const playlist = playlists.find(p => p.id === currentPlaylistId)
+    if (playlist) {
+      const [moved] = playlist.tracks.splice(draggedIndex, 1)
+      playlist.tracks.splice(targetIndex, 0, moved)
+      ipcRenderer.send('reorder-tracks', { playlistId: currentPlaylistId, trackIds: playlist.tracks.map(t => t.id) })
+    }
+  }
+
+  renderListHTML(getCurrentTracks(), true)
+}
+
+const handleDragEnd = (e) => {
+  document.querySelectorAll('.track-row').forEach(row => {
+    row.classList.remove('dragging', 'drag-over')
+  })
+  dragSrcEl = null
+}
+
+// ========================= 添加到歌单菜单 =========================
+
+let menuTrackId = null
+
+const showPlaylistMenu = (btn, trackId) => {
+  menuTrackId = trackId
+  const menu = document.getElementById('playlist-menu')
+  const list = document.getElementById('playlist-menu-list')
+  if (!menu || !list) return
+
+  // 渲染歌单列表（排除已包含该歌曲的歌单）
+  const availablePlaylists = playlists.filter(pl => {
+    if (pl.id === 'all') return false
+    return !pl.tracks.some(t => t.path === currentTrack?.path)
+  })
+
+  if (availablePlaylists.length === 0) {
+    list.innerHTML = '<div class="playlist-menu-item" style="color:var(--text-muted)">没有可添加的歌单</div>'
+  } else {
+    list.innerHTML = availablePlaylists.map(pl =>
+      `<div class="playlist-menu-item" data-playlist-id="${pl.id}">${pl.name}</div>`
+    ).join('')
+  }
+
+  // 定位菜单
+  const rect = btn.getBoundingClientRect()
+  menu.style.left = rect.left + 'px'
+  menu.style.top = (rect.bottom + 4) + 'px'
+  menu.classList.remove('hidden')
+
+  // 绑定点击
+  list.querySelectorAll('.playlist-menu-item[data-playlist-id]').forEach(item => {
+    item.addEventListener('click', () => {
+      const targetPlaylistId = item.dataset.playlistId
+      ipcRenderer.send('add-to-playlist', { sourcePlaylistId: currentPlaylistId, targetPlaylistId, trackId: menuTrackId })
+      hidePlaylistMenu()
+    })
+  })
+
+  // 点击外部关闭
+  setTimeout(() => {
+    document.addEventListener('click', hidePlaylistMenuOnClick, { once: true })
+  }, 10)
+}
+
+const hidePlaylistMenu = () => {
+  const menu = document.getElementById('playlist-menu')
+  if (menu) menu.classList.add('hidden')
+  menuTrackId = null
+}
+
+const hidePlaylistMenuOnClick = (e) => {
+  const menu = document.getElementById('playlist-menu')
+  if (menu && !menu.contains(e.target)) {
+    hidePlaylistMenu()
+  }
+}
+
+// ========================= 歌单对话框 =========================
+
+let dialogMode = 'create' // 'create' | 'rename'
+let editingPlaylistId = null
+
+const showPlaylistDialog = (mode, playlistId = null, currentName = '') => {
+  dialogMode = mode
+  editingPlaylistId = playlistId
+  const dialog = document.getElementById('playlist-dialog')
+  const title = document.getElementById('dialog-title')
+  const input = document.getElementById('playlist-name-input')
+
+  if (!dialog || !title || !input) return
+
+  title.textContent = mode === 'create' ? '新建歌单' : '重命名歌单'
+  input.value = currentName
+  dialog.classList.remove('hidden')
+  input.focus()
+}
+
+const hidePlaylistDialog = () => {
+  const dialog = document.getElementById('playlist-dialog')
+  const input = document.getElementById('playlist-name-input')
+  if (dialog) dialog.classList.add('hidden')
+  if (input) input.value = ''
+  editingPlaylistId = null
+}
+
+// 定位当前歌曲
+const locateCurrentTrack = () => {
+  if (!currentTrack) return
+  const row = document.querySelector(`.track-row[data-id="${currentTrack.id}"]`)
+  if (!row) {
+    // 如果不在当前视图，切换到全部歌曲再试
+    if (currentPlaylistId !== 'all') {
+      switchPlaylist('all')
+      setTimeout(() => {
+        const r = document.querySelector(`.track-row[data-id="${currentTrack.id}"]`)
+        if (r) r.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 100)
+    }
+    return
+  }
+  row.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  // 高亮闪烁效果
+  row.style.transition = 'none'
+  row.style.background = 'var(--active-bg)'
+  setTimeout(() => {
+    row.style.transition = ''
+    row.style.background = ''
+  }, 800)
+}
+
+// ========================= 歌单事件绑定 =========================
+
+// 全部歌曲导航项点击
+document.querySelectorAll('.nav-item[data-id]').forEach(item => {
+  item.addEventListener('click', (e) => {
+    const id = item.dataset.id
+    if (id && id !== currentPlaylistId) {
+      switchPlaylist(id)
+    }
+  })
+})
+
+// 新建歌单按钮
+document.getElementById('btn-new-playlist')?.addEventListener('click', () => {
+  showPlaylistDialog('create')
+})
+
+// 对话框确认
+document.getElementById('dialog-confirm')?.addEventListener('click', (e) => {
+  e.stopPropagation()
+  const input = document.getElementById('playlist-name-input')
+  const name = input?.value.trim()
+  if (!name) return
+
+  if (dialogMode === 'create') {
+    ipcRenderer.send('create-playlist', name)
+  } else if (dialogMode === 'rename' && editingPlaylistId) {
+    ipcRenderer.send('rename-playlist', { id: editingPlaylistId, name })
+  }
+  hidePlaylistDialog()
+})
+
+// 对话框取消
+document.getElementById('dialog-cancel')?.addEventListener('click', (e) => {
+  e.stopPropagation()
+  hidePlaylistDialog()
+})
+
+// 回车确认
+document.getElementById('playlist-name-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('dialog-confirm')?.click()
+  if (e.key === 'Escape') hidePlaylistDialog()
+})
+
+// 定位按钮
+document.getElementById('locate-track')?.addEventListener('click', locateCurrentTrack)
+
+// 歌单更新 IPC
+ipcRenderer.on('playlists-data', (event, data) => {
+  playlists = data
+  renderPlaylists()
+  renderListHTML(getCurrentTracks())
+  // 如果有待恢复的播放状态，执行恢复
+  if (pendingPlaybackState) {
+    restorePlaybackState(pendingPlaybackState)
+    pendingPlaybackState = null
+  }
+})
+
+ipcRenderer.on('playlists-updated', (event, updatedPlaylists) => {
+  playlists = updatedPlaylists
+  renderPlaylists()
+  renderListHTML(getCurrentTracks())
+})
+
+ipcRenderer.on('playback-state', (event, state) => {
+  if (playlists.length > 0) {
+    restorePlaybackState(state)
+  } else {
+    pendingPlaybackState = state
+  }
+})
+
+ipcRenderer.on('playlist-created', (event, playlist) => {
+  // 自动切换到新歌单
+  switchPlaylist(playlist.id)
+})
+
+// ========================= 修改现有事件 =========================
+
+// 修改搜索，在当前歌单内搜索
+const searchInput = document.getElementById('search-input')
+if (searchInput) {
+  searchInput.addEventListener('input', (e) => {
+    const keyword = e.target.value.trim().toLowerCase()
+    if (!keyword) {
+      renderListHTML(getCurrentTracks())
+      return
+    }
+    const filtered = getCurrentTracks().filter(track =>
+      track.fileName.toLowerCase().includes(keyword)
+    )
+    renderListHTML(filtered)
+  })
+}
+
+// 修改清空按钮：如果是歌单视图，只清空当前歌单
+const cleanBtn = document.getElementById('clean-list-button')
+if (cleanBtn) {
+  cleanBtn.addEventListener('click', () => {
+    const currentTracks = getCurrentTracks()
+    if (!currentTracks || !currentTracks.length) return
+
+    if (currentPlaylistId !== 'all') {
+      // 清空当前歌单
+      const playlist = playlists.find(p => p.id === currentPlaylistId)
+      if (playlist && confirm(`确定清空歌单「${playlist.name}」吗？`)) {
+        ipcRenderer.send('clean-tracks', currentPlaylistId)
+      }
+      return
+    }
+
+    // 全部歌曲清空（原有逻辑）
+    musicAudio.pause()
+    musicAudio.currentTime = 0
+    isPlaying = false
+    currentTrack = null
+    curLyrics = null
+    // 清空缓存
+    for (const key in trackMetaCache) delete trackMetaCache[key]
+    metaLoadedForTracks = null
+    updatePlayButton(false)
+    updateCoverRotation(false)
+    renderPlayerHTML(null, 0)
+    renderListHTML(getCurrentTracks())
+    ipcRenderer.send('clean-tracks', 'all')
+  })
+}

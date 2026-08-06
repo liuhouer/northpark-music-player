@@ -1,79 +1,187 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="UTF-8">
-    <title>NorthPark 本地音乐播放器</title>
-    <link rel="stylesheet" href="../node_modules/bootstrap/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.8.1/css/all.css" integrity="sha384-50oBUHEmvpQ+1lW4y57PTFmhCaXp0ML5d60M1M7uH2+nqUivzIebhndOJK28anvf" crossorigin="anonymous">
-    <link rel="stylesheet" href="./index.css">
-    <link rel="stylesheet" href="./dark.css">
-  </head>
-  <body>
-    <div class="container mt-4">
+<head>
+  <meta charset="UTF-8">
+  <title>NorthPark 本地音乐播放器</title>
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.8.1/css/all.css"
+        integrity="sha384-50oBUHEmvpQ+1lW4y57PTFmhCaXp0ML5d60M1M7uH2+nqUivzIebhndOJK28anvf" crossorigin="anonymous">
+  <link rel="stylesheet" href="./index.css">
+  <link rel="stylesheet" href="./dark.css">
+</head>
+<body>
 
-        <div class="row " >
-            <div class="fixed-buttons">
-            <button type="button" id="add-music-button" class="btn btn-outline-secondary btn-lg  col-3" title="添加歌曲到曲库">
-                <i class="fas">添加歌曲</i>
-            </button>
-
-            <button type="button" id="clean-list-button" class="btn btn-outline-secondary btn-lg  col-1" title="清空歌单">
-                <i class="fas fa-duotone fa-trash"></i>
-            </button>
-
-            <button type="button" id="previous-button" class="btn btn-outline-secondary btn-lg  col-1" title="上一曲">
-                <i class="fas fa-backward"></i>
-            </button>
-
-            <button type="button" id="next-button" class="btn btn-outline-secondary btn-lg  col-1" title="下一曲">
-                <i class="fas fa-forward"></i>
-            </button>
-
-            <button type="button" id="stop-button" class="btn btn-outline-secondary btn-lg  col-1" title="停止">
-                <i class="fas fa-stop"></i>
-            </button>
-
-            <button type="button" id="loop-button" class="btn btn-outline-secondary btn-lg col-1" title="单曲循环">
-                <i class="fas fa-redo"></i>
-            </button>
-
-            <button type="button" id="random-button" class="btn btn-outline-secondary btn-lg col-1" title="随机播放">
-                <i class="fas fa-random"></i>
-            </button>
-
-            <button type="button" id="dark-mode-button" class="btn btn-outline-secondary btn-lg  col-1"  title="暗色模式">
-                <i class="fas fa-moon"></i>
-            </button>
-            <button type="button" id="show-lrc" class="btn btn-outline-secondary btn-lg  col-1"  title="桌面歌词">
-                <i class="fas ">词</i>
-            </button>
-            </div>
-        </div>
-
-      <div id="tracksList" class="mt-5" style="margin-bottom: 150px;">
+<div id="app">
+  <!-- 左侧边栏 -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <i class="fas fa-music"></i>
+        <span>NorthPark</span>
       </div>
-
     </div>
-    <div id="player-info" class="container fixed-bottom bg-white pb-4">
-      <hr/>
-      <div class="row my-2" id="player-status">
-      </div>
-<!--        <div id="lyrics-container" class="col">-->
-<!--            <p id="current-lyric"></p>-->
-<!--        </div>-->
-      <div class="progress" id="progress-bar">
-        <div class="progress-bar bg-secondary" id="player-progress" role="progressbar" style="width: 0% ;">
-          0%
+    <nav class="sidebar-nav">
+      <div class="nav-section">
+        <div class="nav-item active" data-view="all" data-id="all">
+          <i class="fas fa-compact-disc"></i>
+          <span>默认</span>
         </div>
-
-
-
       </div>
+      <div class="nav-section playlists-section">
+        <div class="playlists-header">
+          <span>我的歌单</span>
+          <button type="button" id="btn-new-playlist" class="btn-icon" title="新建歌单">
+            <i class="fas fa-plus"></i>
+          </button>
+        </div>
+        <div id="playlists-container" class="playlists-list">
+          <!-- 歌单列表由 JS 渲染 -->
+        </div>
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="stats">
+        <span id="song-count">0 首歌曲</span>
+      </div>
+    </div>
+  </aside>
 
+  <!-- 主内容区 -->
+  <main class="main-content">
+    <!-- 顶部工具栏 -->
+    <header class="toolbar">
+      <h1 class="page-title">默认</h1>
+      <div class="toolbar-actions">
+        <div class="search-box">
+          <i class="fas fa-search"></i>
+          <input type="text" id="search-input" placeholder="搜索歌曲...">
+        </div>
+        <button type="button" id="add-music-button" class="btn btn-primary" title="添加歌曲">
+          <i class="fas fa-plus"></i>
+          <span>添加歌曲</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- 歌曲列表 -->
+    <div class="content-body">
+      <div class="tracks-table-header">
+        <div class="th th-drag"></div>
+        <div class="th th-index">#</div>
+        <div class="th th-title">标题</div>
+        <div class="th th-artist">艺术家</div>
+        <div class="th th-album">专辑</div>
+        <div class="th th-duration">时长</div>
+        <div class="th th-actions"></div>
+      </div>
+      <div id="tracksList" class="tracks-list">
+        <div class="empty-state">
+          <i class="fas fa-music"></i>
+          <p>还没有添加任何音乐</p>
+          <button type="button" id="empty-add-btn" class="btn btn-primary">添加歌曲</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- 底部播放器 -->
+  <footer class="player-bar">
+    <!-- 左侧：歌曲信息 -->
+    <div class="player-left">
+      <div class="cover-wrapper">
+        <img id="current-cover" src="defaultCover.ico" alt="cover">
+        <div class="cover-overlay">
+          <i class="fas fa-expand-alt"></i>
+        </div>
+      </div>
+      <div class="song-info">
+        <div id="current-title" class="song-title">未在播放</div>
+        <div class="spectrum-wrapper">
+          <canvas id="music-spectrum" width="160" height="10"></canvas>
+        </div>
+        <div id="current-artist" class="song-artist">--</div>
+      </div>
     </div>
 
-    <script>
-      require('./index.js')
-    </script>
-  </body>
+    <!-- 中间：控制区 -->
+    <div class="player-center">
+      <div class="control-buttons">
+        <button type="button" id="random-button" class="btn-icon" title="随机播放">
+          <i class="fas fa-random"></i>
+        </button>
+        <button type="button" id="previous-button" class="btn-icon btn-lg" title="上一曲">
+          <i class="fas fa-step-backward"></i>
+        </button>
+        <button type="button" id="play-pause-button" class="btn-play" title="播放/暂停">
+          <i class="fas fa-play"></i>
+        </button>
+        <button type="button" id="next-button" class="btn-icon btn-lg" title="下一曲">
+          <i class="fas fa-step-forward"></i>
+        </button>
+        <button type="button" id="loop-button" class="btn-icon" title="单曲循环">
+          <i class="fas fa-redo"></i>
+        </button>
+      </div>
+      <div class="progress-area">
+        <span id="current-time">0:00</span>
+        <div class="progress-track" id="progress-bar">
+          <div class="progress-fill" id="player-progress" style="width: 0%;">
+            <div class="progress-thumb"></div>
+          </div>
+        </div>
+        <span id="total-time">0:00</span>
+      </div>
+    </div>
+
+    <!-- 右侧：额外控制 -->
+    <div class="player-right">
+      <div class="volume-control">
+        <button type="button" id="mute-button" class="btn-icon" title="静音">
+          <i class="fas fa-volume-up"></i>
+        </button>
+        <div class="volume-slider-track" id="volume-slider">
+          <div class="volume-slider-fill" id="volume-fill" style="width: 70%;">
+            <div class="volume-thumb"></div>
+          </div>
+        </div>
+      </div>
+      <div class="extra-buttons">
+        <button type="button" id="locate-track" class="btn-icon" title="定位当前歌曲">
+          <i class="fas fa-crosshairs"></i>
+        </button>
+        <button type="button" id="show-lrc" class="btn-icon" title="桌面歌词">
+          <i class="fas fa-closed-captioning"></i>
+        </button>
+        <button type="button" id="dark-mode-button" class="btn-icon" title="暗色模式">
+          <i class="fas fa-moon"></i>
+        </button>
+        <button type="button" id="clean-list-button" class="btn-icon" title="清空歌单">
+          <i class="fas fa-trash-alt"></i>
+        </button>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<!-- 添加到歌单下拉菜单 -->
+<div id="playlist-menu" class="playlist-menu hidden">
+  <div class="playlist-menu-header">添加到歌单</div>
+  <div id="playlist-menu-list" class="playlist-menu-list"></div>
+</div>
+
+<!-- 新建歌单对话框 -->
+<div id="playlist-dialog" class="playlist-dialog hidden">
+  <div class="playlist-dialog-content">
+    <h3 id="dialog-title">新建歌单</h3>
+    <input type="text" id="playlist-name-input" placeholder="歌单名称" maxlength="30">
+    <div class="playlist-dialog-actions">
+      <button type="button" id="dialog-cancel" class="btn">取消</button>
+      <button type="button" id="dialog-confirm" class="btn btn-primary">确定</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  require('./index.js')
+</script>
+</body>
 </html>

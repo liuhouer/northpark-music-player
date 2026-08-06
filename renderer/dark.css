@@ -1,26 +1,193 @@
-/* 深色模式样式 */
+/* ==========================================
+   Dark Mode - Violet Theme
+   ========================================== */
+
 body.dark-mode {
-    background-color: #2B333E !important;
-    color: #FBF2E3 !important;
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --bg-sidebar: #1a1a2e;
+  --bg-player: #1a1a2e;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --border-color: #2d3748;
+  --hover-bg: rgba(139, 92, 246, 0.08);
+  --active-bg: rgba(139, 92, 246, 0.15);
+  --primary-color: #8b5cf6;
+  --primary-hover: #7c3aed;
 }
 
-/* 深色模式样式 */
-body.dark-mode .list-group-item{
-    background-color: #2B333E !important;
-    color: #FBF2E3 !important;
+body.dark-mode .logo {
+  color: var(--primary-color);
 }
 
-
-/* 深色模式样式 */
-body.dark-mode .bg-white{
-    background-color: #2B333E !important;
-    color: #FBF2E3 !important;
+body.dark-mode .logo i {
+  background: var(--primary-color);
+  color: #fff;
 }
 
-
-/* 深色模式样式 */
-body.dark-mode .fixed-buttons{
-    background-color: #2B333E !important;
-    color: #FBF2E3 !important;
+body.dark-mode .sidebar {
+  background: var(--bg-sidebar);
+  border-right-color: var(--border-color);
 }
 
+body.dark-mode .sidebar-footer {
+  border-top-color: var(--border-color);
+}
+
+body.dark-mode .search-box input {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+body.dark-mode .search-box input:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+}
+
+body.dark-mode .btn-primary {
+  background: var(--primary-color);
+}
+
+body.dark-mode .btn-primary:hover {
+  background: var(--primary-hover);
+}
+
+body.dark-mode .btn-play {
+  background: #fff;
+  color: #000;
+}
+
+body.dark-mode .progress-track,
+body.dark-mode .volume-slider-track {
+  background: var(--border-color);
+}
+
+body.dark-mode .cover-wrapper {
+  background: var(--border-color);
+}
+
+body.dark-mode .player-bar {
+  background: var(--bg-player);
+  border-top-color: var(--border-color);
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.25);
+}
+
+body.dark-mode .tracks-table-header {
+  background: var(--bg-primary);
+  border-bottom-color: var(--border-color);
+}
+
+body.dark-mode .track-row:hover {
+  background: var(--hover-bg);
+}
+
+body.dark-mode .track-row.playing {
+  background: var(--active-bg);
+}
+
+body.dark-mode .track-row.playing::before {
+  background: var(--primary-color);
+}
+
+body.dark-mode .track-title {
+  color: var(--text-primary);
+}
+
+body.dark-mode .track-artist,
+body.dark-mode .track-album {
+  color: var(--text-secondary);
+}
+
+body.dark-mode .track-duration {
+  color: var(--text-muted);
+}
+
+body.dark-mode .btn-icon {
+  color: var(--text-secondary);
+}
+
+body.dark-mode .btn-icon:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+body.dark-mode .btn-icon.active {
+  color: var(--primary-color);
+}
+
+body.dark-mode .volume-slider-fill {
+  background: var(--text-secondary);
+}
+
+body.dark-mode .volume-slider-track:hover .volume-slider-fill {
+  background: var(--primary-color);
+}
+
+body.dark-mode .volume-thumb {
+  border-color: var(--text-secondary);
+}
+
+body.dark-mode .volume-slider-track:hover .volume-thumb {
+  border-color: var(--primary-color);
+}
+
+body.dark-mode .progress-fill {
+  background: var(--primary-color);
+}
+
+body.dark-mode .progress-thumb {
+  background: var(--bg-secondary);
+  border-color: var(--primary-color);
+}
+
+body.dark-mode .progress-track:hover .progress-fill {
+  background: var(--primary-hover);
+}
+
+body.dark-mode .empty-state {
+  color: var(--text-muted);
+}
+
+body.dark-mode .player-left .spectrum-wrapper canvas {
+  filter: hue-rotate(260deg) saturate(1.5);
+}
+
+/* Scrollbar dark */
+body.dark-mode .content-body::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+}
+
+body.dark-mode .content-body::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Playlists dark */
+body.dark-mode .playlist-menu {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+}
+
+body.dark-mode .playlist-menu-header {
+  border-bottom-color: var(--border-color);
+}
+
+body.dark-mode .playlist-menu-item:hover {
+  background: var(--hover-bg);
+}
+
+body.dark-mode .playlist-dialog-content {
+  background: var(--bg-secondary);
+}
+
+body.dark-mode .playlist-dialog-content input {
+  background: var(--bg-primary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+body.dark-mode .playlist-dialog-content input:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+}

@@ -1,8 +1,8 @@
 {
   "name": "northpark-music-player",
-  "productName": "NorthparkMusicPlayer",
-  "version": "1.0.5",
-  "description": "A minimal Electron application",
+  "productName": "Northpark Music Player",
+  "version": "1.1.0",
+  "description": "A minimalist and elegant music player crafted by northpark.cn",
   "copyright": "northpark.cn",
   "author": {
     "name": "Jeey Snow",
@@ -10,13 +10,29 @@
   },
   "main": "main.js",
   "scripts": {
-    "start": "nodemon --watch main.js  --exec   \" chcp 65001 && electron .\"",
-    "dist": "build"
+    "start": "nodemon --watch main.js --exec electron .",
+    "dist": "electron-builder"
   },
   "build": {
-    "appId": "NorthparkMusicPlayer",
+    "appId": "cn.northpark.musicplayer",
+    "productName": "Northpark Music Player",
+    "copyright": "Copyright © 2024 northpark.cn. All rights reserved.",
+    "directories": {
+      "output": "dist"
+    },
     "mac": {
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.music",
+      "icon": "build/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
+      ]
     },
     "dmg": {
       "background": "build/appdmg.png",
@@ -41,6 +57,11 @@
       }
     },
     "linux": {
+      "maintainer": "northpark.cn",
+      "vendor": "northpark.cn",
+      "synopsis": "Northpark Music Player",
+      "description": "A minimalist and elegant music player crafted by northpark.cn",
+      "category": "AudioVideo",
       "target": [
         "AppImage",
         "deb"
@@ -54,6 +75,13 @@
             "x64",
             "ia32"
           ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
         }
       ],
       "icon": "build/icon256.ico",
@@ -61,6 +89,17 @@
     },
     "msi": {
       "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon256.ico",
+      "uninstallerIcon": "build/icon256.ico",
+      "installerHeaderIcon": "build/icon256.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Northpark Music Player",
+      "artifactName": "${productName}-${version}-Setup-northpark.${ext}"
     }
   },
   "repository": "https://github.com/electron/electron-quick-start",
@@ -75,7 +114,7 @@
   "license": "CC0-1.0",
   "devDependencies": {
     "electron": "^30.0.5",
-    "electron-builder": "^20.44.4",
+    "electron-builder": "^24.13.3",
     "nodemon": "^1.19.4"
   },
   "dependencies": {

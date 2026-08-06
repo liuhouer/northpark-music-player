@@ -20,7 +20,9 @@ class AppWindow extends BrowserWindow {
   constructor(config, fileLocation) {
     const basicConfig = {
       width: 1200,
-      height: 600,
+      height: 700,
+      minWidth: 900,
+      minHeight: 500,
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
@@ -57,8 +59,10 @@ app.on('ready', () => {
 
   // 在主窗口的webContents完成加载后，发送获取音乐数据的请求
   mainWindow.webContents.on('did-finish-load',() => {
-    //恢复音乐列表
-    mainWindow.send('getTracks', myStore.getTracks())
+    //恢复歌单列表（包含默认和各歌单的tracks）
+    mainWindow.send('playlists-data', myStore.getPlaylists())
+    //恢复播放状态
+    mainWindow.send('playback-state', myStore.getPlaybackState())
     //恢复桌面歌词
     mainWindow.send('LyricWindowStatus', myStore.getShowLyricWindow())
     //启动时恢复随机播放状态
@@ -80,8 +84,10 @@ app.on('ready', () => {
 
 
   let addWindowInstance = null;
+  let addWindowPlaylistId = 'all';
   // 监听'add-music-window'事件，创建添加音乐窗口实例
-  ipcMain.on('add-music-window',(event, isDarkMode) => {
+  ipcMain.on('add-music-window',(event, isDarkMode, playlistId) => {
+    addWindowPlaylistId = playlistId || 'all'
     if (addWindowInstance === null) {
       const addWindow = new BrowserWindow({
         width: 500,
@@ -95,55 +101,52 @@ app.on('ready', () => {
 
       addWindow.loadFile('./renderer/add.html');
 
-
       addWindow.once('ready-to-show', () => {
         addWindow.show();
-        addWindowInstance = addWindow; // 设置addWindowInstance为当前打开的addWindow实例
+        addWindowInstance = addWindow;
       });
 
       addWindow.on('closed', () => {
-        addWindowInstance = null; // 清空addWindowInstance
+        addWindowInstance = null;
       });
 
-      // 在子窗口的webContents完成加载后，发送获取音乐数据的请求
       addWindow.webContents.on('did-finish-load',() => {
         addWindow.send('apply-dark-mode', isDarkMode);
+        addWindow.send('playlist-context', addWindowPlaylistId);
       })
 
-      addWindow.setMenu(null); // 移除菜单栏
+      addWindow.setMenu(null);
     }
 
-    console.log('add-music-window:::' + isDarkMode);
+    console.log('add-music-window:::' + isDarkMode + ', playlist:' + addWindowPlaylistId);
 
   })
 
-  // 监听'add-tracks'事件，添加音乐到数据存储，并发送更新后的音乐数据给主窗口
-  ipcMain.on('add-tracks', (event, tracks) => {
-    const updatedTracks = myStore.addTracks(tracks).getTracks()
-    mainWindow.send('getTracks', updatedTracks)
+  // 监听'add-tracks'事件，添加音乐到指定歌单
+  ipcMain.on('add-tracks', (event, tracks, playlistId) => {
+    const targetPlaylistId = playlistId || addWindowPlaylistId || 'all'
+    console.log('add-tracks received, count:', tracks ? tracks.length : 0, 'playlist:', targetPlaylistId)
+    myStore.addTracks(tracks, targetPlaylistId)
+    mainWindow.send('playlists-updated', myStore.getPlaylists())
 
     mainWindow.focus();
 
     if (addWindowInstance !== null) {
-      addWindowInstance.close(); // 关闭 addWindow 窗口
+      addWindowInstance.close();
     }
-
-
-
   })
 
-  // 监听'clean-tracks'事件，清空播放列表
-  ipcMain.on('clean-tracks', (event, tracks) => {
-    console.log('监听到clean-tracks事件')
-    const updatedTracks = []
-    myStore.cleanTracks();
-    mainWindow.send('getTracks', updatedTracks)
+  // 监听'clean-tracks'事件，清空指定歌单
+  ipcMain.on('clean-tracks', (event, playlistId) => {
+    console.log('监听到clean-tracks事件, playlist:', playlistId)
+    myStore.cleanTracks(playlistId || 'all')
+    mainWindow.send('playlists-updated', myStore.getPlaylists())
   })
 
-  // 监听'delete-track'事件，从数据存储中删除音乐，并发送更新后的音乐数据给主窗口
-  ipcMain.on('delete-track', (event, id) => {
-    const updatedTracks = myStore.deleteTrack(id).getTracks()
-    mainWindow.send('getTracks', updatedTracks)
+  // 监听'delete-track'事件，从指定歌单删除音乐
+  ipcMain.on('delete-track', (event, { id, playlistId }) => {
+    myStore.deleteTrack(id, playlistId || 'all')
+    mainWindow.send('playlists-updated', myStore.getPlaylists())
   })
 
   // 监听'open-music-file'事件，打开文件对话框选择音乐文件，并发送选中的文件给渲染进程
@@ -181,72 +184,88 @@ app.on('ready', () => {
     console.log('closeLyricWindow---->  lyricWindow states',lyricWindow);
     if (lyricWindow) {
       lyricWindow.close();
-      //保存到配置文件
       myStore.saveShowLyricWindow(false);
-
     }
     mainWindow.webContents.send('updateLyricWindowStatus', false);
   });
 
   // 监听来自桌面歌词窗口的打开
-  ipcMain.on('showLyricWindow',(event) => {
-    //保存到配置文件
+  ipcMain.on('showLyricWindow', (event) => {
     myStore.saveShowLyricWindow(true);
-    console.log('showLyricWindow---->   lyricWindow states',lyricWindow);
-    // 发送showLyricWindow事件给歌词窗口
+    console.log('showLyricWindow---->   lyricWindow states', lyricWindow);
     if (!lyricWindow) {
-
       const { screen } = require('electron');
-      // 获取屏幕的宽度和高度
       const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+      const lrcConfig = myStore.getLyricConfig();
+      const savedPos = myStore.getLyricPosition();
 
-      // 创建歌词窗口
+      // 使用保存的位置，如果没有则使用默认位置
+      let winX = savedPos ? savedPos.x : (width - 900) / 2;
+      let winY = savedPos ? savedPos.y : height - 140;
+
+      // 确保窗口在屏幕可视区域内
+      if (winX < 0) winX = 0;
+      if (winY < 0) winY = 0;
+      if (winX > width - 200) winX = width - 200;
+      if (winY > height - 60) winY = height - 60;
+
       lyricWindow = new BrowserWindow({
         width: 900,
-        height: 100,
-        x: (width - 900) / 2, // 将窗口水平居中
-        y: height - 120, // 将窗口设置在屏幕最下方
-        alwaysOnTop: true, // 窗口始终显示在最上层
-        transparent: true, // 设置窗口为透明
-        frame: false, // 移除窗口的边框
-        skipTaskbar: true, // 不显示在任务栏
+        height: 120,
+        x: winX,
+        y: winY,
+        alwaysOnTop: true,
+        transparent: true,
+        frame: false,
+        skipTaskbar: true,
+        hasShadow: false,
         webPreferences: {
-          nodeIntegration: true, // 允许在窗口中使用Node.js API
+          nodeIntegration: true,
           contextIsolation: false,
           webSecurity: false,
         }
       });
 
-      // 设置窗口透明度为20%
-      //lyricWindow.setOpacity(0.9);
-
-      // 启用鼠标穿透
-      lyricWindow.setIgnoreMouseEvents(true, { forward: true });
-
-      lyricWindow.setMenu(null); // 移除菜单栏
-
-
-      // 加载歌词窗口的HTML文件
+      lyricWindow.setMenu(null);
       lyricWindow.loadFile('./renderer/lyric.html');
 
-      // 当歌词窗口被关闭时将其引用置为空
-      lyricWindow.on('closed', () => {
-        lyricWindow = null;
-        //mainWindow.webContents.send('updateLyricWindowStatus', false);
+      // 加载完成后发送配置
+      lyricWindow.webContents.on('did-finish-load', () => {
+        lyricWindow.send('desk-lrc-init', lrcConfig);
       });
 
+      // 窗口移动后保存位置（使用 moved 事件，拖动结束后触发）
+      lyricWindow.on('moved', () => {
+        if (lyricWindow) {
+          const pos = lyricWindow.getPosition();
+          myStore.saveLyricPosition(pos[0], pos[1]);
+        }
+      });
+
+      lyricWindow.on('closed', () => {
+        lyricWindow = null;
+      });
     }
     mainWindow.webContents.send('updateLyricWindowStatus', true);
   });
 
   // 监听更新桌面歌词
-  ipcMain.on('updateDeskLyric',(event,curLrc) => {
-
-
-    if(lyricWindow){
+  ipcMain.on('updateDeskLyric', (event, curLrc) => {
+    if (lyricWindow) {
       lyricWindow.send('updateDeskLc', curLrc)
     }
+  });
 
+  // 监听桌面歌词配置变化
+  ipcMain.on('desk-lrc-config', (event, config) => {
+    myStore.saveLyricConfig(config);
+  });
+
+  // 监听桌面歌词锁定切换（仅保存状态，不再设置鼠标穿透）
+  ipcMain.on('toggle-desk-lock', (event, locked) => {
+    const config = myStore.getLyricConfig();
+    config.locked = locked;
+    myStore.saveLyricConfig(config);
   });
 
 
@@ -261,6 +280,51 @@ app.on('ready', () => {
     //保存到配置文件
     myStore.saveIsLooping(isLooping);
   });
+
+  // ========================= 歌单管理 IPC =========================
+  ipcMain.on('get-playlists', (event) => {
+    event.sender.send('playlists-updated', myStore.getPlaylists())
+  })
+
+  ipcMain.on('create-playlist', (event, name) => {
+    const playlist = myStore.addPlaylist(name)
+    event.sender.send('playlists-updated', myStore.getPlaylists())
+    event.sender.send('playlist-created', playlist)
+  })
+
+  ipcMain.on('rename-playlist', (event, { id, name }) => {
+    myStore.renamePlaylist(id, name)
+    event.sender.send('playlists-updated', myStore.getPlaylists())
+  })
+
+  ipcMain.on('delete-playlist', (event, id) => {
+    myStore.deletePlaylist(id)
+    event.sender.send('playlists-updated', myStore.getPlaylists())
+  })
+
+  ipcMain.on('add-to-playlist', (event, { sourcePlaylistId, targetPlaylistId, trackId }) => {
+    myStore.addTrackToPlaylist(sourcePlaylistId, targetPlaylistId, trackId)
+    event.sender.send('playlists-updated', myStore.getPlaylists())
+  })
+
+  ipcMain.on('remove-from-playlist', (event, { playlistId, trackId }) => {
+    myStore.removeTrackFromPlaylist(playlistId, trackId)
+    event.sender.send('playlists-updated', myStore.getPlaylists())
+  })
+
+  ipcMain.on('reorder-playlist', (event, { playlistId, trackIds }) => {
+    myStore.reorderPlaylist(playlistId, trackIds)
+    event.sender.send('playlists-updated', myStore.getPlaylists())
+  })
+
+  ipcMain.on('reorder-tracks', (event, { playlistId, trackIds }) => {
+    myStore.reorderTracks(trackIds, playlistId || 'all')
+    event.sender.send('playlists-updated', myStore.getPlaylists())
+  })
+
+  ipcMain.on('save-playback-state', (event, { playlistId, trackId }) => {
+    myStore.savePlaybackState(playlistId, trackId)
+  })
 
 
 

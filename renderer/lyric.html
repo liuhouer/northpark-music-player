@@ -1,38 +1,317 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>歌词窗口</title>
-    <style>
-        .lyric-text {
-            display: inline-flex!important;
-            justify-content: center!important;
-            align-items: center!important;
-            font-size: 16px;
-            font-weight: bold;
-            white-space: pre-wrap;
-        }
+  <meta charset="UTF-8">
+  <title>桌面歌词</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      user-select: none;
+    }
 
-    </style>
-    <link rel="stylesheet" href="./index.css">
+    body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      cursor: default;
+    }
+
+    /* 歌词区域 - 默认可拖拽 */
+    .lyric-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px 40px 40px;
+      transition: all 0.3s ease;
+      -webkit-app-region: drag;
+    }
+
+    .lyric-container.locked {
+      -webkit-app-region: no-drag;
+      cursor: default;
+    }
+
+    .lyric-line {
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      width: 100%;
+      line-height: 1.5;
+      transition: all 0.3s ease;
+    }
+
+    /* 当前行 - 卡拉OK滚动变色效果 */
+    .lyric-current {
+      font-size: var(--font-size, 28px);
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: 2px;
+    }
+
+    .karaoke-text {
+      display: inline;
+      background: linear-gradient(to right,
+        var(--lrc-color, #e74c3c) 50%,
+        rgba(103, 232, 249, 0.85) 50%);
+      background-size: 200% 100%;
+      background-position: 100% 0;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: karaokeRoll var(--roll-duration, 3s) linear forwards;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+    }
+
+    @keyframes karaokeRoll {
+      to {
+        background-position: 0% 0;
+      }
+    }
+
+    .lyric-next {
+      font-size: calc(var(--font-size, 28px) * 0.55);
+      font-weight: 400;
+      color: rgba(255,255,255,0.55);
+      text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+      -webkit-app-region: no-drag;
+    }
+
+    /* 控制栏 */
+    .control-bar {
+      position: absolute;
+      bottom: 4px;
+      left: 50%;
+      transform: translateX(-50%) translateY(10px);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      background: rgba(0,0,0,0.5);
+      border-radius: 20px;
+      opacity: 0;
+      transition: all 0.25s ease;
+      backdrop-filter: blur(8px);
+      -webkit-app-region: no-drag;
+    }
+
+    body:hover .control-bar {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .ctrl-btn {
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: 50%;
+      background: transparent;
+      color: rgba(255,255,255,0.85);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .ctrl-btn:hover {
+      background: rgba(255,255,255,0.15);
+      color: #fff;
+    }
+
+    .ctrl-btn.lock-active {
+      color: #e74c3c;
+    }
+
+    .ctrl-sep {
+      width: 1px;
+      height: 14px;
+      background: rgba(255,255,255,0.2);
+      margin: 0 2px;
+    }
+
+    .color-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .color-dot:hover {
+      transform: scale(1.15);
+    }
+
+    .color-dot.active {
+      border-color: rgba(255,255,255,0.8);
+    }
+
+    /* 锁定提示 */
+    .lock-hint {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 6px 16px;
+      background: rgba(0,0,0,0.6);
+      border-radius: 16px;
+      color: #fff;
+      font-size: 13px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      backdrop-filter: blur(4px);
+    }
+
+    .lock-hint.show {
+      opacity: 1;
+    }
+  </style>
 </head>
 <body>
-<div id="current-lyric" class="lyric-text"></div>
 
-<script>
-    // 在这里监听来自主进程的消息，并更新当前歌词的内容
-    const { ipcRenderer } = require('electron');
+  <div class="lyric-container" id="lyric-container">
+    <div class="lyric-line lyric-current" id="line-current">
+      <span class="karaoke-text" style="--roll-duration:0s">桌面歌词</span>
+    </div>
+    <div class="lyric-line lyric-next" id="line-next">等待播放...</div>
+  </div>
 
-    ipcRenderer.on('updateDeskLc', (event, lyric) => {
-        const currentLyricElement = document.getElementById('current-lyric');
-        currentLyricElement.innerHTML = '';
-        console.log('receive desk lrc',lyric)
-        currentLyricElement.innerHTML = '<pre>'+lyric+'</pre>';
-        currentLyricElement.scrollIntoView({behavior: 'smooth', block: 'center'});
-    });
+  <div class="lock-hint" id="lock-hint">已锁定位置</div>
 
+  <div class="control-bar" id="control-bar">
+    <button class="ctrl-btn" id="btn-font-dec" title="缩小字体">A-</button>
+    <button class="ctrl-btn" id="btn-font-inc" title="放大字体">A+</button>
+    <div class="ctrl-sep"></div>
+    <div class="color-dot active" data-color="#e74c3c" style="background:#e74c3c" title="红色"></div>
+    <div class="color-dot" data-color="#3498db" style="background:#3498db" title="蓝色"></div>
+    <div class="color-dot" data-color="#2ecc71" style="background:#2ecc71" title="绿色"></div>
+    <div class="color-dot" data-color="#f1c40f" style="background:#f1c40f" title="黄色"></div>
+    <div class="color-dot" data-color="#ffffff" style="background:#ffffff" title="白色"></div>
+    <div class="ctrl-sep"></div>
+    <button class="ctrl-btn" id="btn-lock" title="锁定位置"><i class="fas fa-lock-open"></i></button>
+    <button class="ctrl-btn" id="btn-close" title="关闭歌词"><i class="fas fa-times"></i></button>
+  </div>
 
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.8.1/css/all.css"
+        integrity="sha384-50oBUHEmvpQ+1lW4y57PTFmhCaXp0ML5d60M1M7uH2+nqUivzIebhndOJK28anvf" crossorigin="anonymous">
 
-</script>
+  <script>
+    const { ipcRenderer } = require('electron')
+
+    let config = {
+      fontSize: 28,
+      color: '#e74c3c',
+      locked: false
+    }
+
+    const MIN_FONT = 16
+    const MAX_FONT = 48
+
+    const lineCurrent = document.getElementById('line-current')
+    const lineNext = document.getElementById('line-next')
+    const container = document.getElementById('lyric-container')
+    const btnLock = document.getElementById('btn-lock')
+    const lockHint = document.getElementById('lock-hint')
+
+    const applyConfig = () => {
+      document.documentElement.style.setProperty('--font-size', config.fontSize + 'px')
+      document.documentElement.style.setProperty('--lrc-color', config.color)
+      ipcRenderer.send('desk-lrc-config', config)
+    }
+
+    // 字体调节
+    document.getElementById('btn-font-dec').addEventListener('click', () => {
+      if (config.fontSize > MIN_FONT) {
+        config.fontSize -= 2
+        applyConfig()
+      }
+    })
+
+    document.getElementById('btn-font-inc').addEventListener('click', () => {
+      if (config.fontSize < MAX_FONT) {
+        config.fontSize += 2
+        applyConfig()
+      }
+    })
+
+    // 颜色选择
+    document.querySelectorAll('.color-dot').forEach(dot => {
+      dot.addEventListener('click', () => {
+        document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'))
+        dot.classList.add('active')
+        config.color = dot.dataset.color
+        applyConfig()
+      })
+    })
+
+    // 锁定/解锁 - 仅禁用/启用拖拽，不设置鼠标穿透
+    const updateLockUI = () => {
+      if (config.locked) {
+        btnLock.innerHTML = '<i class="fas fa-lock"></i>'
+        btnLock.classList.add('lock-active')
+        btnLock.title = '点击解锁'
+        container.classList.add('locked')
+        lockHint.classList.add('show')
+        setTimeout(() => lockHint.classList.remove('show'), 1500)
+      } else {
+        btnLock.innerHTML = '<i class="fas fa-lock-open"></i>'
+        btnLock.classList.remove('lock-active')
+        btnLock.title = '锁定位置'
+        container.classList.remove('locked')
+      }
+    }
+
+    btnLock.addEventListener('click', () => {
+      config.locked = !config.locked
+      updateLockUI()
+      applyConfig()
+      ipcRenderer.send('toggle-desk-lock', config.locked)
+    })
+
+    // 关闭
+    document.getElementById('btn-close').addEventListener('click', () => {
+      ipcRenderer.send('closeLyricWindow')
+    })
+
+    // 接收歌词更新 - 新格式 {text, duration, next}
+    ipcRenderer.on('updateDeskLc', (event, data) => {
+      if (!data) return
+      const { text, duration, next } = data
+      const dur = Math.max(0.5, duration || 3)
+
+      // 当前行使用卡拉OK滚动动画
+      lineCurrent.innerHTML = `<span class="karaoke-text" style="--roll-duration:${dur}s">${escapeHtml(text || '歌词加载中...')}</span>`
+      lineNext.textContent = next || ''
+    })
+
+    // 接收配置
+    ipcRenderer.on('desk-lrc-init', (event, savedConfig) => {
+      if (savedConfig) {
+        config = { ...config, ...savedConfig }
+        applyConfig()
+        updateLockUI()
+        document.querySelectorAll('.color-dot').forEach(d => {
+          d.classList.toggle('active', d.dataset.color === config.color)
+        })
+      }
+    })
+
+    const escapeHtml = (text) => {
+      const div = document.createElement('div')
+      div.textContent = text
+      return div.innerHTML
+    }
+
+    applyConfig()
+  </script>
 </body>
 </html>

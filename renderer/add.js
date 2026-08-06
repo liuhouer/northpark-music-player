@@ -2,6 +2,7 @@ const { ipcRenderer } = require('electron')
 const { $ } = require('./helper')
 const path = require('path')
 let musicFilesPath = []
+let currentPlaylistId = 'all'
 
 
 $('select-music').addEventListener('click', () => {
@@ -11,7 +12,13 @@ $('select-music').addEventListener('click', () => {
 
 //点击了导入音乐
 $('add-music').addEventListener('click', () => {
-  ipcRenderer.send('add-tracks', musicFilesPath)
+  ipcRenderer.send('add-tracks', musicFilesPath, currentPlaylistId)
+})
+
+// 接收歌单上下文
+ipcRenderer.on('playlist-context', (event, playlistId) => {
+  currentPlaylistId = playlistId || 'all'
+  console.log('add window playlist context:', currentPlaylistId)
 })
 
 const renderListHTML = (pathes) => {
