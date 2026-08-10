@@ -20,6 +20,11 @@
       cursor: default;
     }
 
+    /* 锁定状态标记，用于样式控制（鼠标穿透由主进程动态管理） */
+    body.locked {
+      cursor: default;
+    }
+
     /* 歌词区域 - 默认可拖拽 */
     .lyric-container {
       width: 100%;
@@ -99,8 +104,10 @@
       transition: all 0.25s ease;
       backdrop-filter: blur(8px);
       -webkit-app-region: no-drag;
+      pointer-events: auto;
     }
 
+    /* 鼠标在窗口内时显示控制栏 */
     body:hover .control-bar {
       opacity: 1;
       transform: translateX(-50%) translateY(0);
@@ -253,13 +260,14 @@
       })
     })
 
-    // 锁定/解锁 - 仅禁用/启用拖拽，不设置鼠标穿透
+    // 锁定/解锁 - 禁用拖拽并设置鼠标穿透，仅控制栏可交互
     const updateLockUI = () => {
       if (config.locked) {
         btnLock.innerHTML = '<i class="fas fa-lock"></i>'
         btnLock.classList.add('lock-active')
         btnLock.title = '点击解锁'
         container.classList.add('locked')
+        document.body.classList.add('locked')
         lockHint.classList.add('show')
         setTimeout(() => lockHint.classList.remove('show'), 1500)
       } else {
@@ -267,6 +275,7 @@
         btnLock.classList.remove('lock-active')
         btnLock.title = '锁定位置'
         container.classList.remove('locked')
+        document.body.classList.remove('locked')
       }
     }
 

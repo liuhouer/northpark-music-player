@@ -43,6 +43,45 @@ class AppWindow extends BrowserWindow {
 
 
 let lyricWindow = null; // 歌词窗口的引用
+let deskMouseCheckInterval = null; // 桌面歌词鼠标穿透定时检测
+let deskMouseEventsIgnored = false; // 当前是否处于鼠标穿透状态
+
+// 启动桌面歌词鼠标区域检测：锁定后默认完全穿透，鼠标移到控制栏区域时恢复交互
+const startDeskMouseCheck = () => {
+  if (deskMouseCheckInterval) return;
+  const { screen } = require('electron');
+  deskMouseCheckInterval = setInterval(() => {
+    if (!lyricWindow) return;
+    try {
+      const cursor = screen.getCursorScreenPoint();
+      const bounds = lyricWindow.getBounds();
+      // 控制栏区域：窗口底部 44px（控制栏高度 + 边距）
+      const ctrlBarTop = bounds.y + bounds.height - 44;
+      const inCtrlBar = cursor.x >= bounds.x &&
+                        cursor.x <= bounds.x + bounds.width &&
+                        cursor.y >= ctrlBarTop &&
+                        cursor.y <= bounds.y + bounds.height;
+      if (inCtrlBar && deskMouseEventsIgnored) {
+        lyricWindow.setIgnoreMouseEvents(false);
+        deskMouseEventsIgnored = false;
+      } else if (!inCtrlBar && !deskMouseEventsIgnored) {
+        lyricWindow.setIgnoreMouseEvents(true);
+        deskMouseEventsIgnored = true;
+      }
+    } catch (e) {
+      // 窗口可能正在关闭，忽略错误
+    }
+  }, 80);
+};
+
+// 停止桌面歌词鼠标区域检测
+const stopDeskMouseCheck = () => {
+  if (deskMouseCheckInterval) {
+    clearInterval(deskMouseCheckInterval);
+    deskMouseCheckInterval = null;
+  }
+  deskMouseEventsIgnored = false;
+};
 
 
 app.on('ready', () => {
@@ -232,6 +271,12 @@ app.on('ready', () => {
       // 加载完成后发送配置
       lyricWindow.webContents.on('did-finish-load', () => {
         lyricWindow.send('desk-lrc-init', lrcConfig);
+        // 根据锁定状态启动鼠标区域检测
+        if (lrcConfig && lrcConfig.locked) {
+          lyricWindow.setIgnoreMouseEvents(true);
+          deskMouseEventsIgnored = true;
+          startDeskMouseCheck();
+        }
       });
 
       // 窗口移动后保存位置（使用 moved 事件，拖动结束后触发）
@@ -244,6 +289,7 @@ app.on('ready', () => {
 
       lyricWindow.on('closed', () => {
         lyricWindow = null;
+        stopDeskMouseCheck();
       });
     }
     mainWindow.webContents.send('updateLyricWindowStatus', true);
@@ -261,11 +307,21 @@ app.on('ready', () => {
     myStore.saveLyricConfig(config);
   });
 
-  // 监听桌面歌词锁定切换（仅保存状态，不再设置鼠标穿透）
+  // 监听桌面歌词锁定切换：锁定后完全穿透，鼠标移到控制栏区域时恢复交互
   ipcMain.on('toggle-desk-lock', (event, locked) => {
     const config = myStore.getLyricConfig();
     config.locked = locked;
     myStore.saveLyricConfig(config);
+    if (lyricWindow) {
+      if (locked) {
+        lyricWindow.setIgnoreMouseEvents(true);
+        deskMouseEventsIgnored = true;
+        startDeskMouseCheck();
+      } else {
+        stopDeskMouseCheck();
+        lyricWindow.setIgnoreMouseEvents(false);
+      }
+    }
   });
 
 
