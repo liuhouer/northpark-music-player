@@ -10,7 +10,7 @@
   },
   "main": "main.js",
   "scripts": {
-    "start": "nodemon --watch main.js --exec electron .",
+    "start": "nodemon --watch main.js --exec ./node_modules/.bin/electron .",
     "dist": "electron-builder"
   },
   "build": {
@@ -20,17 +20,26 @@
     "directories": {
       "output": "dist"
     },
+    "asarUnpack": [
+      "build/**"
+    ],
     "mac": {
       "category": "public.app-category.music",
       "icon": "build/icon.icns",
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ]
     },
@@ -90,6 +99,22 @@
     "msi": {
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
+    "fileAssociations": [
+      {
+        "ext": [
+          "mp3",
+          "flac",
+          "wav",
+          "aac",
+          "ogg",
+          "m4a"
+        ],
+        "name": "Audio File",
+        "description": "Audio file",
+        "role": "Editor",
+        "icon": "build/icon256.ico"
+      }
+    ],
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
@@ -127,6 +152,7 @@
     "jschardet": "^3.1.2",
     "jsmediatags": "^3.9.7",
     "music-metadata": "^7.14.0",
+    "node-id3": "^0.2.9",
     "popper.js": "^1.15.0",
     "uuid": "^3.3.2"
   }
