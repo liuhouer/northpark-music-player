@@ -1502,28 +1502,68 @@ if (process.platform === 'win32') {
 
 // ========================= 生成托盘图标 =========================
 
+const drawMusicNoteFallback = (ctx, color) => {
+  // 完全不依赖外部字体，用 Canvas 路径手动绘制一个简洁的八分音符
+  ctx.fillStyle = color
+
+  // 音符头部（椭圆）
+  ctx.beginPath()
+  ctx.ellipse(10, 23, 6.5, 5, -0.4, 0, Math.PI * 2)
+  ctx.fill()
+
+  // 符杆
+  ctx.fillRect(14.5, 5, 2.5, 19)
+
+  // 符尾（贝塞尔曲线填充）
+  ctx.beginPath()
+  ctx.moveTo(17, 5)
+  ctx.bezierCurveTo(25, 8, 27, 14, 23, 19)
+  ctx.lineTo(23, 17)
+  ctx.bezierCurveTo(25, 13, 23, 9, 17, 7)
+  ctx.closePath()
+  ctx.fill()
+}
+
+const canvasHasVisibleContent = (ctx, width, height) => {
+  try {
+    const imageData = ctx.getImageData(0, 0, width, height)
+    // 检查是否存在非透明像素（alpha > 10，避免抗锯齿边缘误判）
+    for (let i = 3; i < imageData.data.length; i += 4) {
+      if (imageData.data[i] > 10) return true
+    }
+  } catch (e) { /* ignore */ }
+  return false
+}
+
 const generateTrayIcon = async () => {
   try {
     const canvas = document.createElement('canvas')
     canvas.width = 32
     canvas.height = 32
     const ctx = canvas.getContext('2d')
+    const color = document.body.classList.contains('dark-mode') ? '#8b5cf6' : '#e74c3c'
 
-    // 等待字体加载完成
+    // 清除画布（透明背景）
+    ctx.clearRect(0, 0, 32, 32)
+
+    // 先尝试用 Font Awesome 字体渲染
     await document.fonts.ready
     try {
       await document.fonts.load('900 22px "Font Awesome 5 Free"')
     } catch (e) { /* ignore */ }
 
-    // 清除画布（透明背景）
-    ctx.clearRect(0, 0, 32, 32)
-
-    // 绘制音符图标（fa-music = \uf001）
     ctx.font = '900 22px "Font Awesome 5 Free", "FontAwesome", sans-serif'
-    ctx.fillStyle = document.body.classList.contains('dark-mode') ? '#8b5cf6' : '#e74c3c'
+    ctx.fillStyle = color
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText('\uf001', 16, 16)
+
+    // 检测字体是否真正渲染成功（打包后无网络时字体可能加载失败）
+    if (!canvasHasVisibleContent(ctx, 32, 32)) {
+      // 字体渲染失败，使用路径回退绘制
+      ctx.clearRect(0, 0, 32, 32)
+      drawMusicNoteFallback(ctx, color)
+    }
 
     const dataUrl = canvas.toDataURL('image/png')
     ipcRenderer.send('tray-icon-data', dataUrl)

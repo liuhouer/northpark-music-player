@@ -182,13 +182,44 @@ const setupTray = (trayIcon) => {
   })
 }
 
+// 获取打包后 asarUnpack 资源的正确路径
+const getUnpackedPath = (relativePath) => {
+  const appPath = app.getAppPath()
+  // 打包后 appPath 以 .asar 结尾，资源被解压到 .asar.unpacked
+  if (appPath.endsWith('.asar')) {
+    return path.join(appPath.replace(/\.asar$/, '.asar.unpacked'), relativePath)
+  }
+  return path.join(appPath, relativePath)
+}
+
 let trayIconDataUrl = null // 缓存 renderer 传来的图标数据
+
+// 从 base64 dataURL 创建 nativeImage（比 createFromDataURL 更可靠）
+const createIconFromDataUrl = (dataUrl) => {
+  try {
+    const base64 = dataUrl.replace(/^data:image\/png;base64,/, '')
+    const buffer = Buffer.from(base64, 'base64')
+    const image = nativeImage.createFromBuffer(buffer)
+    if (image.isEmpty()) {
+      console.error('从 dataURL 创建的图标为空')
+      return null
+    }
+    return image
+  } catch (e) {
+    console.error('从 dataURL 创建图标失败:', e.message)
+    return null
+  }
+}
 
 // 接收 renderer 进程生成的托盘图标
 ipcMain.on('tray-icon-data', (event, dataUrl) => {
   trayIconDataUrl = dataUrl
   if (tray) {
-    tray.setImage(nativeImage.createFromDataURL(dataUrl).resize({ width: 16, height: 16 }))
+    const image = createIconFromDataUrl(dataUrl)
+    if (image) {
+      tray.setImage(image)
+      console.log('托盘图标已更新为 renderer 生成的图标')
+    }
   }
 })
 
@@ -196,13 +227,14 @@ ipcMain.on('tray-icon-data', (event, dataUrl) => {
 const createTray = async () => {
   if (tray) return
 
-  // 先尝试从 build 目录加载 ICO 文件
-  const iconPath = path.join(__dirname, 'build', 'icon128.ico')
+  // 先尝试从 build 目录加载 ICO 文件（打包后指向 asar.unpacked）
+  const iconPath = getUnpackedPath(path.join('build', 'icon128.ico'))
   let trayIcon = null
 
   try {
     trayIcon = nativeImage.createFromPath(iconPath)
     if (trayIcon.isEmpty()) throw new Error('ICO 文件加载为空')
+    console.log('托盘图标已加载:', iconPath)
   } catch (e) {
     console.log('ICO 文件加载失败，尝试从应用 exe 提取图标:', e.message)
     try {
@@ -218,7 +250,11 @@ const createTray = async () => {
 
   // 如果已有 renderer 传来的图标数据，立即更新为音符图标
   if (trayIconDataUrl) {
-    tray.setImage(nativeImage.createFromDataURL(trayIconDataUrl).resize({ width: 16, height: 16 }))
+    const image = createIconFromDataUrl(trayIconDataUrl)
+    if (image) {
+      tray.setImage(image)
+      console.log('托盘图标已更新为 renderer 生成的图标')
+    }
   }
 }
 
