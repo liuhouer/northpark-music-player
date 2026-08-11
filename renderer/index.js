@@ -5,6 +5,7 @@ const { $, convertDuration } = require('./helper')
 const jsmediatags = require('jsmediatags')
 
 let musicAudio = new Audio()
+musicAudio.preload = 'metadata'
 let currentTrack
 let currentLyricIndex = 0
 let currentLyricIndexAnimationDuration = 1
@@ -38,13 +39,12 @@ const restorePlaybackState = (state) => {
 
   switchPlaylist(playlistId)
 
-  // 查找并播放对应歌曲（从头播放）
+  // 查找并播放对应歌曲（只恢复UI状态，不加载音频数据，等用户点击播放时再加载）
   const track = playlist.tracks.find(t => t.id === trackId)
   if (track) {
     currentTrack = track
     musicAudio.src = track.path
-    // 不自动播放，只加载并定位
-    musicAudio.load()
+    // 不调用 load()，preload='metadata' 只会加载元数据，不占用大量内存
     renderPlayerHTML(track.fileName, 0)
     renderListHTML(getCurrentTracks(), true)
   }
@@ -83,6 +83,7 @@ const renderListHTML = (tracks, skipMeta = false) => {
     const isCurrent = currentTrack && currentTrack.path === track.path
     const isTrackPlaying = isCurrent && isPlaying
     const meta = trackMetaCache[track.path] || {}
+    const ext = track.fileName.split('.').pop().toLowerCase()
     return `
       <div class="track-row ${isCurrent ? 'playing' : ''}" data-id="${track.id}" draggable="true">
         <div class="drag-handle" title="拖动排序">
@@ -90,14 +91,14 @@ const renderListHTML = (tracks, skipMeta = false) => {
         </div>
         <div class="track-index">
           <span>${index + 1}</span>
-          <i class="fas fa-play play-icon" data-id="${track.id}"></i>
+          <i class="fas fa-info-circle info-icon" data-id="${track.id}" title="查看标签信息"></i>
           <div class="playing-indicator">
             <span></span><span></span><span></span>
           </div>
         </div>
         <div class="track-title">
           <div class="cover-placeholder" data-cover-id="${track.id}"><i class="fas fa-music"></i></div>
-          <span>${track.fileName.replace(/\.mp3$/i, '')}</span>
+          <span>${track.fileName.replace(/\.(mp3|flac|wav|aac|ogg|m4a)$/i, '')}</span>
         </div>
         <div class="track-artist" data-artist-id="${track.id}">${meta.artist || '--'}</div>
         <div class="track-album" data-album-id="${track.id}">${meta.album || '--'}</div>
@@ -105,6 +106,9 @@ const renderListHTML = (tracks, skipMeta = false) => {
         <div class="track-actions">
           <button class="btn-icon btn-play-track" data-id="${track.id}" title="${isTrackPlaying ? '暂停' : '播放'}">
             <i class="fas ${isTrackPlaying ? 'fa-pause' : 'fa-play'}"></i>
+          </button>
+          <button class="btn-icon btn-edit-tag" data-id="${track.id}" data-ext="${ext}" title="编辑标签">
+            <i class="fas fa-edit"></i>
           </button>
           <button class="btn-icon btn-add-to-playlist" data-id="${track.id}" title="添加到歌单">
             <i class="fas fa-folder-plus"></i>
@@ -142,8 +146,13 @@ const loadTracksMeta = async (tracks) => {
       const artist = common.artist || common.artists?.join(', ') || '--'
       const album = common.album || '--'
       const duration = format.duration ? convertDuration(format.duration) : '--:--'
+      const durationSec = format.duration || 0
+      const title = common.title || ''
+      const year = common.year ? String(common.year) : ''
+      const genre = common.genre?.[0] || ''
+      const comment = common.comment?.[0]?.text || ''
 
-      trackMetaCache[track.path] = { artist, album, duration }
+      trackMetaCache[track.path] = { artist, album, duration, durationSec, title, year, genre, comment }
 
       const artistEl = document.querySelector(`[data-artist-id="${track.id}"]`)
       const albumEl = document.querySelector(`[data-album-id="${track.id}"]`)
@@ -153,7 +162,7 @@ const loadTracksMeta = async (tracks) => {
       if (albumEl) albumEl.textContent = album
       if (durationEl) durationEl.textContent = duration
     } catch (e) {
-      trackMetaCache[track.path] = { artist: '--', album: '--', duration: '--:--' }
+      trackMetaCache[track.path] = { artist: '--', album: '--', duration: '--:--', durationSec: 0, title: '', year: '', genre: '', comment: '' }
     }
   }
 }
@@ -168,7 +177,7 @@ const bindTrackEvents = () => {
   })
 
   // 播放按钮
-  document.querySelectorAll('.btn-play-track, .play-icon').forEach(btn => {
+  document.querySelectorAll('.btn-play-track').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation()
       const id = btn.dataset.id
@@ -179,6 +188,28 @@ const bindTrackEvents = () => {
       } else {
         playTrack(id)
       }
+    })
+  })
+
+  // 信息图标：查看 ID3 标签
+  document.querySelectorAll('.info-icon').forEach(icon => {
+    icon.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const id = icon.dataset.id
+      if (!id) return
+      const track = getCurrentTracks().find(t => t.id === id)
+      if (track) showId3Info(track)
+    })
+  })
+
+  // 编辑标签按钮
+  document.querySelectorAll('.btn-edit-tag').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const id = btn.dataset.id
+      if (!id) return
+      const track = getCurrentTracks().find(t => t.id === id)
+      if (track) showId3Edit(track)
     })
   })
 
@@ -206,6 +237,173 @@ const bindTrackEvents = () => {
   })
 }
 
+// ========================= ID3 标签弹窗 =========================
+
+let currentEditingTrack = null
+
+const showId3Info = async (track) => {
+  const dialog = $('id3-info-dialog')
+  const body = $('id3-info-body')
+
+  // 优先使用缓存，如果没有则实时读取
+  let meta = trackMetaCache[track.path]
+  if (!meta) {
+    const mm = require('music-metadata')
+    try {
+      const metadata = await mm.parseFile(track.path)
+      const { common, format } = metadata
+      meta = {
+        title: common.title || '',
+        artist: common.artist || common.artists?.join(', ') || '--',
+        album: common.album || '--',
+        year: common.year ? String(common.year) : '',
+        genre: common.genre?.[0] || '',
+        comment: common.comment?.[0]?.text || '',
+        duration: format.duration ? convertDuration(format.duration) : '--:--'
+      }
+    } catch (e) {
+      meta = {}
+    }
+  }
+
+  // 对于 MP3，尝试用 node-id3 读取更详细的原始标签
+  let rawTags = null
+  const ext = track.fileName.split('.').pop().toLowerCase()
+  if (ext === 'mp3') {
+    try {
+      const NodeID3 = require('node-id3')
+      rawTags = NodeID3.read(track.path)
+    } catch (e) { /* ignore */ }
+  }
+
+  const formatFileSize = (bytes) => {
+    if (!bytes) return '--'
+    if (bytes < 1024) return bytes + ' B'
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+  }
+
+  let fileSize = '--'
+  try {
+    const fs = require('fs')
+    const stat = fs.statSync(track.path)
+    fileSize = formatFileSize(stat.size)
+  } catch (e) { /* ignore */ }
+
+  const rows = [
+    { label: '文件名', value: track.fileName },
+    { label: '标题', value: rawTags?.title || meta.title || '--' },
+    { label: '艺术家', value: rawTags?.artist || meta.artist || '--' },
+    { label: '专辑', value: rawTags?.album || meta.album || '--' },
+    { label: '年份', value: rawTags?.year || meta.year || '--' },
+    { label: '流派', value: rawTags?.genre || meta.genre || '--' },
+    { label: '注释', value: (rawTags?.comment?.text || rawTags?.comment || meta.comment || '--') },
+    { label: '时长', value: meta.duration || '--' },
+    { label: '文件大小', value: fileSize },
+    { label: '文件路径', value: track.path },
+  ]
+
+  body.innerHTML = rows.map(r => `
+    <div class="id3-info-row">
+      <div class="id3-label">${r.label}</div>
+      <div class="id3-value">${r.value}</div>
+    </div>
+  `).join('')
+
+  dialog.classList.remove('hidden')
+}
+
+const showId3Edit = async (track) => {
+  currentEditingTrack = track
+  const dialog = $('id3-edit-dialog')
+  const ext = track.fileName.split('.').pop().toLowerCase()
+
+  // 非 MP3 提示不支持
+  if (ext !== 'mp3') {
+    alert('当前仅支持编辑 MP3 格式的 ID3 标签')
+    return
+  }
+
+  // 读取现有标签
+  let tags = { title: '', artist: '', album: '', year: '', genre: '', comment: '' }
+  try {
+    const NodeID3 = require('node-id3')
+    const raw = NodeID3.read(track.path)
+    if (raw) {
+      tags.title = raw.title || ''
+      tags.artist = raw.artist || ''
+      tags.album = raw.album || ''
+      tags.year = raw.year || ''
+      tags.genre = raw.genre || ''
+      tags.comment = raw.comment?.text || raw.comment || ''
+    }
+  } catch (e) {
+    console.error('读取 ID3 标签失败:', e)
+  }
+
+  $('id3-edit-title').value = tags.title
+  $('id3-edit-artist').value = tags.artist
+  $('id3-edit-album').value = tags.album
+  $('id3-edit-year').value = tags.year
+  $('id3-edit-genre').value = tags.genre
+  $('id3-edit-comment').value = tags.comment
+  $('id3-edit-path').textContent = track.path
+  $('id3-edit-format').textContent = ext.toUpperCase()
+
+  dialog.classList.remove('hidden')
+}
+
+const closeId3Edit = () => {
+  $('id3-edit-dialog').classList.add('hidden')
+  currentEditingTrack = null
+}
+
+const saveId3Tags = () => {
+  if (!currentEditingTrack) return
+
+  const tags = {
+    title: $('id3-edit-title').value.trim(),
+    artist: $('id3-edit-artist').value.trim(),
+    album: $('id3-edit-album').value.trim(),
+    year: $('id3-edit-year').value.trim(),
+    genre: $('id3-edit-genre').value.trim(),
+    comment: $('id3-edit-comment').value.trim()
+  }
+
+  try {
+    const NodeID3 = require('node-id3')
+    const success = NodeID3.update(tags, currentEditingTrack.path)
+    if (success) {
+      alert('标签保存成功')
+      // 刷新缓存和列表显示
+      delete trackMetaCache[currentEditingTrack.path]
+      loadTracksMeta([currentEditingTrack])
+      closeId3Edit()
+    } else {
+      alert('标签保存失败')
+    }
+  } catch (e) {
+    console.error('保存 ID3 标签失败:', e)
+    alert('保存失败: ' + e.message)
+  }
+}
+
+// ID3 弹窗事件绑定
+$('id3-info-close').addEventListener('click', () => {
+  $('id3-info-dialog').classList.add('hidden')
+})
+
+$('id3-info-dialog').addEventListener('click', (e) => {
+  if (e.target === $('id3-info-dialog')) $('id3-info-dialog').classList.add('hidden')
+})
+
+$('id3-edit-cancel').addEventListener('click', closeId3Edit)
+$('id3-edit-save').addEventListener('click', saveId3Tags)
+
+$('id3-edit-dialog').addEventListener('click', (e) => {
+  if (e.target === $('id3-edit-dialog')) closeId3Edit()
+})
+
 // ========================= 播放器状态渲染 =========================
 const renderPlayerHTML = (name, duration) => {
   const titleEl = $('current-title')
@@ -221,11 +419,14 @@ const renderPlayerHTML = (name, duration) => {
     return
   }
 
-  titleEl.textContent = name.replace(/\.mp3$/i, '')
+  const cleanName = name.replace(/\.(mp3|flac|wav|aac|ogg|m4a)$/i, '')
+  titleEl.textContent = cleanName
   artistEl.textContent = '--'
   $('total-time').textContent = convertDuration(duration)
   updatePlayButton(isPlaying)
   updateCoverRotation(isPlaying)
+  // 歌曲切换时更新托盘 tooltip
+  ipcRenderer.send('playback-status-changed', { isPlaying, title: cleanName })
 
   // 重置封面为placeholder
   coverWrapper.innerHTML = '<div class="cover-placeholder"><i class="fas fa-music"></i></div>'
@@ -393,6 +594,16 @@ let bufferLength
 let audioContext
 let sourceConnected = false
 
+// 获取当前曲目的准确时长（优先使用 music-metadata 预读值，解决 FLAC duration 为 Infinity 的问题）
+const getTrackDuration = () => {
+  if (!currentTrack) return 0
+  const cached = trackMetaCache[currentTrack.path]
+  if (cached && cached.durationSec && isFinite(cached.durationSec)) {
+    return cached.durationSec
+  }
+  return musicAudio.duration && isFinite(musicAudio.duration) ? musicAudio.duration : 0
+}
+
 const initAudioContext = () => {
   if (audioContext) return
   audioContext = new (window.AudioContext || window.webkitAudioContext)()
@@ -400,7 +611,7 @@ const initAudioContext = () => {
   const source = audioContext.createMediaElementSource(musicAudio)
   source.connect(analyser)
   analyser.connect(audioContext.destination)
-  analyser.fftSize = 2048
+  analyser.fftSize = 512
   bufferLength = analyser.frequencyBinCount
   dataArray = new Uint8Array(bufferLength)
   sourceConnected = true
@@ -441,27 +652,29 @@ const updateSpectrumCtx = () => {
 
 // ========================= 音频事件监听 =========================
 musicAudio.addEventListener('loadedmetadata', async () => {
-  renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
+  const duration = getTrackDuration() || musicAudio.duration
+  renderPlayerHTML(currentTrack.fileName, duration)
   if (!sourceConnected) initAudioContext()
-  updateProgressHTML(musicAudio.currentTime, musicAudio.duration)
+  updateProgressHTML(musicAudio.currentTime, duration)
   curLyrics = await loadLrc()
 })
 
 musicAudio.addEventListener('timeupdate', () => {
-  updateProgressHTML(musicAudio.currentTime, musicAudio.duration)
+  const duration = getTrackDuration()
+  updateProgressHTML(musicAudio.currentTime, duration)
   updateSpectrumCtx()
 
   // 歌词处理（简化版，保留在播放器状态中）
   if (curLyrics && curLyrics.length) {
     const currentLyricTime = currentLyricIndex >= curLyrics.length
-      ? musicAudio.duration
+      ? duration
       : curLyrics[currentLyricIndex].time
 
     if (musicAudio.currentTime >= currentLyricTime) {
       try {
         currentLyricIndexAnimationDuration = (curLyrics[currentLyricIndex + 1].time - curLyrics[currentLyricIndex].time)
       } catch (e) {
-        currentLyricIndexAnimationDuration = musicAudio.duration - curLyrics[currentLyricIndex].time
+        currentLyricIndexAnimationDuration = duration - curLyrics[currentLyricIndex].time
       }
 
       const currentText = curLyrics[currentLyricIndex].text
@@ -508,6 +721,8 @@ musicAudio.addEventListener('play', () => {
   updatePlayButton(true)
   updateCoverRotation(true)
   renderListHTML(getCurrentTracks(), true)
+  const title = currentTrack ? currentTrack.fileName.replace(/\.(mp3|flac|wav|aac|ogg|m4a)$/i, '') : ''
+  ipcRenderer.send('playback-status-changed', { isPlaying: true, title })
 })
 
 musicAudio.addEventListener('pause', () => {
@@ -515,6 +730,8 @@ musicAudio.addEventListener('pause', () => {
   updatePlayButton(false)
   updateCoverRotation(false)
   renderListHTML(getCurrentTracks(), true)
+  const title = currentTrack ? currentTrack.fileName.replace(/\.(mp3|flac|wav|aac|ogg|m4a)$/i, '') : ''
+  ipcRenderer.send('playback-status-changed', { isPlaying: false, title })
 })
 
 // ========================= 按钮事件绑定 =========================
@@ -570,11 +787,12 @@ if (stopButton) {
 
 // 进度条点击
 $('progress-bar').addEventListener('click', (event) => {
-  if (!musicAudio.duration) return
+  const duration = getTrackDuration()
+  if (!duration) return
   const rect = $('progress-bar').getBoundingClientRect()
   const percentage = (event.clientX - rect.left) / rect.width
-  musicAudio.currentTime = musicAudio.duration * percentage
-  updateProgressHTML(musicAudio.currentTime, musicAudio.duration)
+  musicAudio.currentTime = duration * percentage
+  updateProgressHTML(musicAudio.currentTime, duration)
 })
 
 // 音量控制
@@ -1179,6 +1397,18 @@ ipcRenderer.on('playlist-created', (event, playlist) => {
   switchPlaylist(playlist.id)
 })
 
+// 监听外部文件打开（系统文件关联/命令行传入）
+ipcRenderer.on('open-external-file', (event, filePath) => {
+  // 确保歌单数据已加载
+  const playlist = playlists.find(p => p.id === 'all')
+  if (!playlist) return
+  const track = playlist.tracks.find(t => t.path === filePath)
+  if (track) {
+    switchPlaylist('all')
+    playTrack(track.id)
+  }
+})
+
 // ========================= 修改现有事件 =========================
 
 // 修改搜索，在当前歌单内搜索
@@ -1195,6 +1425,118 @@ if (searchInput) {
     )
     renderListHTML(filtered)
   })
+}
+
+// ========================= 系统托盘控制 =========================
+
+// 监听托盘发来的播放/暂停指令
+ipcRenderer.on('tray-play-pause', () => {
+  const currentTracks = getCurrentTracks()
+  if (!currentTracks || !currentTracks.length) return
+  if (!currentTrack) {
+    playTrack(currentTracks[0].id)
+  } else if (isPlaying) {
+    pauseTrack()
+  } else {
+    musicAudio.play()
+  }
+})
+
+// 监听托盘发来的下一曲指令
+ipcRenderer.on('tray-next', () => {
+  const currentTracks = getCurrentTracks()
+  if (!currentTracks || !currentTracks.length || !currentTrack) return
+  const currentIndex = currentTracks.findIndex(track => track.id === currentTrack.id)
+  const nextIndex = (currentIndex + 1) % currentTracks.length
+  playTrack(currentTracks[nextIndex].id)
+})
+
+// ========================= 设为默认播放器 =========================
+
+const defaultPlayerBtn = document.getElementById('set-default-player')
+
+const updateDefaultPlayerBtn = (isDefault) => {
+  if (!defaultPlayerBtn) return
+  if (isDefault) {
+    defaultPlayerBtn.classList.add('active')
+    defaultPlayerBtn.title = '已是默认音乐播放器'
+  } else {
+    defaultPlayerBtn.classList.remove('active')
+    defaultPlayerBtn.title = '打开默认应用设置，手动设为默认播放器'
+  }
+}
+
+if (defaultPlayerBtn) {
+  // 非 Windows 系统隐藏该按钮
+  if (process.platform !== 'win32') {
+    defaultPlayerBtn.style.display = 'none'
+  } else {
+    defaultPlayerBtn.addEventListener('click', () => {
+      // 先写入注册表确保 Northpark 出现在默认应用列表中，再打开设置界面
+      ipcRenderer.send('set-default-player')
+    })
+  }
+}
+
+// 监听默认播放器设置结果
+ipcRenderer.on('default-player-result', (event, { success, message }) => {
+  if (success) {
+    updateDefaultPlayerBtn(true)
+    // 打开 Windows 默认应用设置界面
+    ipcRenderer.send('open-default-apps-settings')
+    alert('Northpark 已注册到默认应用列表，即将打开系统设置。\n\n请在"默认应用"设置中，将"音乐播放器"手动设为 Northpark。')
+  } else {
+    alert('设置失败: ' + message)
+  }
+})
+
+// 监听默认播放器状态
+ipcRenderer.on('default-player-status', (event, isDefault) => {
+  updateDefaultPlayerBtn(isDefault)
+})
+
+// 启动时检测是否已是默认播放器
+if (process.platform === 'win32') {
+  ipcRenderer.send('check-default-player')
+}
+
+// ========================= 生成托盘图标 =========================
+
+const generateTrayIcon = async () => {
+  try {
+    const canvas = document.createElement('canvas')
+    canvas.width = 32
+    canvas.height = 32
+    const ctx = canvas.getContext('2d')
+
+    // 等待字体加载完成
+    await document.fonts.ready
+    try {
+      await document.fonts.load('900 22px "Font Awesome 5 Free"')
+    } catch (e) { /* ignore */ }
+
+    // 清除画布（透明背景）
+    ctx.clearRect(0, 0, 32, 32)
+
+    // 绘制音符图标（fa-music = \uf001）
+    ctx.font = '900 22px "Font Awesome 5 Free", "FontAwesome", sans-serif'
+    ctx.fillStyle = document.body.classList.contains('dark-mode') ? '#8b5cf6' : '#e74c3c'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('\uf001', 16, 16)
+
+    const dataUrl = canvas.toDataURL('image/png')
+    ipcRenderer.send('tray-icon-data', dataUrl)
+  } catch (e) {
+    console.error('生成托盘图标失败:', e)
+  }
+}
+
+// 页面加载后生成并发送托盘图标
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', generateTrayIcon)
+} else {
+  generateTrayIcon()
 }
 
 // 修改清空按钮：如果是歌单视图，只清空当前歌单

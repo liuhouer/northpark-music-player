@@ -1037,3 +1037,126 @@ html, body {
   padding: 8px 16px;
   font-size: 13px;
 }
+
+/* ==========================================
+   ID3 Tag Dialog
+   ========================================== */
+.id3-dialog-content {
+  width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.id3-info-body {
+  margin-bottom: 20px;
+}
+
+.id3-info-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 13px;
+}
+
+.id3-info-row:last-child {
+  border-bottom: none;
+}
+
+.id3-info-row .id3-label {
+  width: 80px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.id3-info-row .id3-value {
+  flex: 1;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.id3-edit-body {
+  margin-bottom: 20px;
+}
+
+.id3-field {
+  margin-bottom: 12px;
+}
+
+.id3-field-row {
+  display: flex;
+  gap: 12px;
+}
+
+.id3-field-row .id3-field {
+  flex: 1;
+}
+
+.id3-field label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.id3-field input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: var(--transition);
+}
+
+.id3-field input:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.1);
+}
+
+.id3-field.id3-readonly span {
+  display: block;
+  padding: 8px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+/* 信息图标样式 */
+.info-icon {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+  transition: var(--transition);
+}
+
+.track-index .info-icon {
+  display: none;
+}
+
+.track-row:hover .track-index .info-icon {
+  display: inline-block;
+}
+
+.track-row:hover .track-index span {
+  display: none;
+}
+
+.track-row.playing:hover .track-index .info-icon {
+  display: none;
+}
+
+.track-row.playing:hover .track-index span {
+  display: none;
+}
+
+/* 编辑标签按钮 */
+.btn-edit-tag {
+  color: var(--text-muted);
+}
+
+.btn-edit-tag:hover {
+  color: var(--primary-color);
+}

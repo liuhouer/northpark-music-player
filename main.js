@@ -1,7 +1,47 @@
 
 //引入了Electron模块中的app、BrowserWindow、ipcMain和dialog对象，并引入了自定义的MusicDataStore模块。
-const { app, BrowserWindow, ipcMain, dialog, ipcRenderer} = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, shell } = require('electron')
+const path = require('path')
+const fs = require('fs')
+const { spawn } = require('child_process')
 const DataStore = require('./renderer/MusicDataStore')
+
+// 支持的音频格式
+const SUPPORTED_AUDIO_EXTS = ['mp3', 'flac', 'wav', 'aac', 'ogg', 'm4a']
+
+// 从命令行参数中提取音频文件路径
+const extractAudioFiles = (args) => {
+  return args.filter(arg => {
+    const ext = path.extname(arg).toLowerCase().slice(1)
+    return SUPPORTED_AUDIO_EXTS.includes(ext)
+  })
+}
+
+// 缓存待处理的外部文件（macOS open-file 可能在 ready 前触发）
+let pendingExternalFiles = []
+
+// 递归扫描文件夹中的音频文件
+const scanMusicFiles = (dirPath) => {
+  const results = []
+  try {
+    const items = fs.readdirSync(dirPath)
+    for (const item of items) {
+      const fullPath = path.join(dirPath, item)
+      const stat = fs.statSync(fullPath)
+      if (stat.isDirectory()) {
+        results.push(...scanMusicFiles(fullPath))
+      } else {
+        const ext = path.extname(fullPath).toLowerCase().slice(1)
+        if (SUPPORTED_AUDIO_EXTS.includes(ext)) {
+          results.push(fullPath)
+        }
+      }
+    }
+  } catch (e) {
+    console.error('扫描文件夹出错:', dirPath, e.message)
+  }
+  return results
+}
 
 
 //创建了一个名为myStore的DataStore实例，用于管理音乐数据。
@@ -42,7 +82,10 @@ class AppWindow extends BrowserWindow {
 }
 
 
+let mainWindow = null; // 主窗口的引用
 let lyricWindow = null; // 歌词窗口的引用
+let tray = null; // 系统托盘引用
+let isQuitting = false; // 是否正在退出
 let deskMouseCheckInterval = null; // 桌面歌词鼠标穿透定时检测
 let deskMouseEventsIgnored = false; // 当前是否处于鼠标穿透状态
 
@@ -84,6 +127,203 @@ const stopDeskMouseCheck = () => {
 };
 
 
+// 设置托盘图标和菜单的公共逻辑
+const setupTray = (trayIcon) => {
+  tray = new Tray(trayIcon.resize({ width: 16, height: 16 }))
+  tray.setToolTip('Northpark Music Player')
+
+  const buildContextMenu = () => {
+    return Menu.buildFromTemplate([
+      {
+        label: '显示主窗口',
+        click: () => {
+          if (mainWindow) {
+            mainWindow.show()
+            mainWindow.focus()
+          }
+        }
+      },
+      { type: 'separator' },
+      {
+        label: '播放 / 暂停',
+        click: () => {
+          if (mainWindow) mainWindow.webContents.send('tray-play-pause')
+        }
+      },
+      {
+        label: '下一曲',
+        click: () => {
+          if (mainWindow) mainWindow.webContents.send('tray-next')
+        }
+      },
+      { type: 'separator' },
+      {
+        label: '退出',
+        click: () => {
+          isQuitting = true
+          app.quit()
+        }
+      }
+    ])
+  }
+
+  tray.setContextMenu(buildContextMenu())
+
+  // 左键单击显示/隐藏主窗口
+  tray.on('click', () => {
+    if (mainWindow) {
+      if (mainWindow.isVisible()) {
+        mainWindow.hide()
+      } else {
+        mainWindow.show()
+        mainWindow.focus()
+      }
+    }
+  })
+}
+
+let trayIconDataUrl = null // 缓存 renderer 传来的图标数据
+
+// 接收 renderer 进程生成的托盘图标
+ipcMain.on('tray-icon-data', (event, dataUrl) => {
+  trayIconDataUrl = dataUrl
+  if (tray) {
+    tray.setImage(nativeImage.createFromDataURL(dataUrl).resize({ width: 16, height: 16 }))
+  }
+})
+
+// ========================= 系统托盘 =========================
+const createTray = async () => {
+  if (tray) return
+
+  // 先尝试从 build 目录加载 ICO 文件
+  const iconPath = path.join(__dirname, 'build', 'icon128.ico')
+  let trayIcon = null
+
+  try {
+    trayIcon = nativeImage.createFromPath(iconPath)
+    if (trayIcon.isEmpty()) throw new Error('ICO 文件加载为空')
+  } catch (e) {
+    console.log('ICO 文件加载失败，尝试从应用 exe 提取图标:', e.message)
+    try {
+      trayIcon = await app.getFileIcon(app.getPath('exe'))
+      if (!trayIcon || trayIcon.isEmpty()) throw new Error('exe 图标提取失败')
+    } catch (e2) {
+      console.error('托盘图标加载彻底失败:', e2.message)
+      return
+    }
+  }
+
+  setupTray(trayIcon)
+
+  // 如果已有 renderer 传来的图标数据，立即更新为音符图标
+  if (trayIconDataUrl) {
+    tray.setImage(nativeImage.createFromDataURL(trayIconDataUrl).resize({ width: 16, height: 16 }))
+  }
+}
+
+// 更新托盘 tooltip 显示播放状态
+const updateTrayTooltip = (isPlaying, title) => {
+  if (!tray) return
+  if (isPlaying && title) {
+    tray.setToolTip(`正在播放: ${title}\nNorthpark Music Player`)
+  } else {
+    tray.setToolTip('Northpark Music Player')
+  }
+}
+
+// ========================= 设为默认播放器（Windows 注册表） =========================
+const PROG_ID = 'NorthparkMusicPlayer'
+const DEFAULT_EXTS = ['mp3', 'flac', 'wav', 'aac', 'ogg', 'm4a']
+
+// 使用 spawn 执行 reg 命令，避免 shell 引号转义问题
+const execReg = (args) => {
+  return new Promise((resolve, reject) => {
+    const proc = spawn('reg', args, { shell: false })
+    let stdout = ''
+    let stderr = ''
+    proc.stdout.on('data', (data) => { stdout += data.toString() })
+    proc.stderr.on('data', (data) => { stderr += data.toString() })
+    proc.on('close', (code) => {
+      if (code !== 0) reject(new Error(stderr || `reg 命令退出码 ${code}`))
+      else resolve(stdout)
+    })
+  })
+}
+
+const isDefaultPlayer = async () => {
+  if (process.platform !== 'win32') return false
+  try {
+    const stdout = await execReg(['query', 'HKEY_CURRENT_USER\\Software\\Classes\\.mp3', '/ve'])
+    const match = stdout.match(/REG_SZ\s+(\S+)/)
+    return match && match[1] === PROG_ID
+  } catch (e) {
+    return false
+  }
+}
+
+const setAsDefaultPlayer = async () => {
+  if (process.platform !== 'win32') {
+    throw new Error('仅支持 Windows 系统')
+  }
+  const exePath = app.getPath('exe')
+  const command = `"${exePath}" "%1"`
+
+  // 1. 创建 ProgID
+  await execReg(['add', `HKEY_CURRENT_USER\\Software\\Classes\\${PROG_ID}`, '/ve', '/d', 'Northpark Music Player', '/f'])
+  await execReg(['add', `HKEY_CURRENT_USER\\Software\\Classes\\${PROG_ID}\\shell\\open\\command`, '/ve', '/d', command, '/f'])
+  await execReg(['add', `HKEY_CURRENT_USER\\Software\\Classes\\${PROG_ID}\\DefaultIcon`, '/ve', '/d', `${exePath},0`, '/f'])
+
+  // 2. 注册到 Windows "默认应用" 设置界面（RegisteredApplications + Capabilities）
+  await execReg(['add', 'HKEY_CURRENT_USER\\Software\\RegisteredApplications', '/v', PROG_ID, '/d', `Software\\${PROG_ID}\\Capabilities`, '/f'])
+  await execReg(['add', `HKEY_CURRENT_USER\\Software\\${PROG_ID}\\Capabilities`, '/v', 'ApplicationName', '/d', 'Northpark Music Player', '/f'])
+  await execReg(['add', `HKEY_CURRENT_USER\\Software\\${PROG_ID}\\Capabilities`, '/v', 'ApplicationDescription', '/d', 'A minimalist and elegant music player crafted by northpark.cn', '/f'])
+
+  for (const ext of DEFAULT_EXTS) {
+    await execReg(['add', `HKEY_CURRENT_USER\\Software\\${PROG_ID}\\Capabilities\\FileAssociations`, '/v', `.${ext}`, '/d', PROG_ID, '/f'])
+  }
+
+  // 3. 为每个扩展名设置默认值
+  for (const ext of DEFAULT_EXTS) {
+    await execReg(['add', `HKEY_CURRENT_USER\\Software\\Classes\\.${ext}`, '/ve', '/d', PROG_ID, '/f'])
+  }
+}
+
+// 单实例锁：确保只有一个应用实例运行，Windows 双击文件时通过 second-instance 传递
+const gotTheLock = app.requestSingleInstanceLock()
+
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', (event, argv, cwd) => {
+    const files = extractAudioFiles(argv)
+    if (files.length > 0 && mainWindow) {
+      myStore.addTracks(files, 'all')
+      mainWindow.send('playlists-updated', myStore.getPlaylists())
+      mainWindow.send('open-external-file', files[0])
+    }
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    }
+  })
+}
+
+// macOS 上通过 Finder 打开文件
+app.on('open-file', (event, filePath) => {
+  event.preventDefault()
+  const ext = path.extname(filePath).toLowerCase().slice(1)
+  if (SUPPORTED_AUDIO_EXTS.includes(ext)) {
+    if (mainWindow && mainWindow.webContents) {
+      myStore.addTracks([filePath], 'all')
+      mainWindow.send('playlists-updated', myStore.getPlaylists())
+      mainWindow.send('open-external-file', filePath)
+    } else {
+      pendingExternalFiles.push(filePath)
+    }
+  }
+})
+
 app.on('ready', () => {
 
 
@@ -94,7 +334,16 @@ app.on('ready', () => {
 
   // 当应用程序准备就绪时触发的事件回调函数
   // 创建主窗口实例，并加载主页HTML文件
-  const mainWindow = new AppWindow({}, './renderer/index.html')
+  mainWindow = new AppWindow({}, './renderer/index.html')
+
+  // 创建系统托盘
+  createTray().catch(err => console.error('创建托盘失败:', err))
+
+  // 处理启动时通过命令行传入的音频文件
+  const startupFiles = extractAudioFiles(process.argv)
+  if (startupFiles.length > 0) {
+    pendingExternalFiles.push(...startupFiles)
+  }
 
   // 在主窗口的webContents完成加载后，发送获取音乐数据的请求
   mainWindow.webContents.on('did-finish-load',() => {
@@ -110,6 +359,32 @@ app.on('ready', () => {
     mainWindow.send('LoopStatus', myStore.getIsLooping())
     //启动时恢复暗色模式
     mainWindow.send('DarkStatus', myStore.getIsDarkMode())
+
+    // 处理待播放的外部文件（命令行/文件关联打开）
+    if (pendingExternalFiles.length > 0) {
+      const files = [...pendingExternalFiles]
+      pendingExternalFiles = []
+      myStore.addTracks(files, 'all')
+      mainWindow.send('playlists-updated', myStore.getPlaylists())
+      mainWindow.send('open-external-file', files[0])
+    }
+  })
+
+  // 关闭时最小化到托盘
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault()
+      mainWindow.hide()
+      // Windows 上显示托盘气球提示
+      if (tray && process.platform === 'win32') {
+        tray.displayBalloon({
+          iconType: 'none',
+          title: 'Northpark Music Player',
+          content: '应用已最小化到系统托盘，右键托盘图标可快速控制播放',
+          respectQuietTime: true
+        })
+      }
+    }
   })
 
   //关闭时
@@ -193,7 +468,7 @@ app.on('ready', () => {
     try {
       const result = await dialog.showOpenDialog({
         properties: ['openFile', 'multiSelections'],
-        filters: [{ name: 'Music', extensions: ['mp3'] }]
+        filters: [{ name: 'Music', extensions: SUPPORTED_AUDIO_EXTS }]
       });
 
       if (!result.canceled && result.filePaths.length > 0) {
@@ -202,6 +477,27 @@ app.on('ready', () => {
       }
     } catch (error) {
       console.error('打开文件对话框时出错:', error);
+    }
+  });
+
+  // 监听'open-music-folder'事件，打开文件夹对话框并递归扫描音频文件
+  ipcMain.on('open-music-folder', async (event) => {
+    try {
+      const result = await dialog.showOpenDialog({
+        properties: ['openDirectory']
+      });
+
+      if (!result.canceled && result.filePaths.length > 0) {
+        const folderPath = result.filePaths[0];
+        console.log('选了文件夹', folderPath);
+        const files = scanMusicFiles(folderPath);
+        console.log('扫描到音频文件', files.length, '个');
+        if (files.length > 0) {
+          event.sender.send('selected-file', files);
+        }
+      }
+    } catch (error) {
+      console.error('打开文件夹对话框时出错:', error);
     }
   });
 
@@ -382,12 +678,46 @@ app.on('ready', () => {
     myStore.savePlaybackState(playlistId, trackId)
   })
 
+  // 监听播放状态变化，更新托盘 tooltip
+  ipcMain.on('playback-status-changed', (event, { isPlaying, title }) => {
+    updateTrayTooltip(isPlaying, title)
+  })
 
+  // 设为默认播放器（保留注册表写入，确保应用出现在默认应用列表中）
+  ipcMain.on('set-default-player', async (event) => {
+    try {
+      await setAsDefaultPlayer()
+      event.sender.send('default-player-result', { success: true, message: '已设为默认音乐播放器' })
+    } catch (err) {
+      event.sender.send('default-player-result', { success: false, message: err.message || '设置失败' })
+    }
+  })
 
+  // 打开 Windows 默认应用设置界面
+  ipcMain.on('open-default-apps-settings', () => {
+    if (process.platform === 'win32') {
+      shell.openExternal('ms-settings:defaultapps')
+    }
+  })
 
+  // 检测是否已是默认播放器
+  ipcMain.on('check-default-player', async (event) => {
+    try {
+      const isDefault = await isDefaultPlayer()
+      event.sender.send('default-player-status', isDefault)
+    } catch (err) {
+      event.sender.send('default-player-status', false)
+    }
+  })
 
+})
 
+// 真正退出前设置标志
+app.on('before-quit', () => {
+  isQuitting = true
+})
 
-
-
+// 所有窗口关闭后不退出（托盘还在）
+app.on('window-all-closed', () => {
+  // macOS 上通常保留应用运行，其他平台也保留（因为有托盘）
 })

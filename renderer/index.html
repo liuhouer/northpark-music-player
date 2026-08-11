@@ -145,6 +145,9 @@
         </div>
       </div>
       <div class="extra-buttons">
+        <button type="button" id="set-default-player" class="btn-icon" title="设为默认音乐播放器">
+          <i class="fas fa-cog"></i>
+        </button>
         <button type="button" id="locate-track" class="btn-icon" title="定位当前歌曲">
           <i class="fas fa-crosshairs"></i>
         </button>
@@ -176,6 +179,66 @@
     <div class="playlist-dialog-actions">
       <button type="button" id="dialog-cancel" class="btn">取消</button>
       <button type="button" id="dialog-confirm" class="btn btn-primary">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- ID3 标签信息展示弹窗 -->
+<div id="id3-info-dialog" class="playlist-dialog hidden">
+  <div class="playlist-dialog-content id3-dialog-content">
+    <h3>歌曲标签信息</h3>
+    <div class="id3-info-body" id="id3-info-body">
+      <!-- 动态填充 -->
+    </div>
+    <div class="playlist-dialog-actions">
+      <button type="button" id="id3-info-close" class="btn btn-primary">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- ID3 标签编辑弹窗 -->
+<div id="id3-edit-dialog" class="playlist-dialog hidden">
+  <div class="playlist-dialog-content id3-dialog-content">
+    <h3>编辑标签信息</h3>
+    <div class="id3-edit-body">
+      <div class="id3-field">
+        <label>标题</label>
+        <input type="text" id="id3-edit-title" placeholder="歌曲标题">
+      </div>
+      <div class="id3-field">
+        <label>艺术家</label>
+        <input type="text" id="id3-edit-artist" placeholder="艺术家">
+      </div>
+      <div class="id3-field">
+        <label>专辑</label>
+        <input type="text" id="id3-edit-album" placeholder="专辑名称">
+      </div>
+      <div class="id3-field-row">
+        <div class="id3-field">
+          <label>年份</label>
+          <input type="text" id="id3-edit-year" placeholder="年份">
+        </div>
+        <div class="id3-field">
+          <label>流派</label>
+          <input type="text" id="id3-edit-genre" placeholder="流派">
+        </div>
+      </div>
+      <div class="id3-field">
+        <label>注释</label>
+        <input type="text" id="id3-edit-comment" placeholder="注释">
+      </div>
+      <div class="id3-field id3-readonly">
+        <label>文件路径</label>
+        <span id="id3-edit-path"></span>
+      </div>
+      <div class="id3-field id3-readonly">
+        <label>文件格式</label>
+        <span id="id3-edit-format"></span>
+      </div>
+    </div>
+    <div class="playlist-dialog-actions">
+      <button type="button" id="id3-edit-cancel" class="btn">取消</button>
+      <button type="button" id="id3-edit-save" class="btn btn-primary">保存</button>
     </div>
   </div>
 </div>

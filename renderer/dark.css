@@ -15,6 +15,7 @@ body.dark-mode {
   --active-bg: rgba(139, 92, 246, 0.15);
   --primary-color: #8b5cf6;
   --primary-hover: #7c3aed;
+  background: var(--bg-primary);
 }
 
 body.dark-mode .logo {
@@ -190,4 +191,130 @@ body.dark-mode .playlist-dialog-content input {
 body.dark-mode .playlist-dialog-content input:focus {
   border-color: var(--primary-color);
   box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+}
+
+/* ==========================================
+   Import Window Dark Mode
+   ========================================== */
+
+body.dark-mode .import-header h1 {
+  color: var(--text-primary);
+}
+
+body.dark-mode .import-subtitle {
+  color: var(--text-muted);
+}
+
+body.dark-mode .import-stats {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+}
+
+body.dark-mode .stats-count {
+  color: var(--primary-color);
+}
+
+body.dark-mode .stats-size {
+  color: var(--text-muted);
+}
+
+body.dark-mode .import-list {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+}
+
+body.dark-mode .import-list::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+}
+
+body.dark-mode .file-item {
+  border-bottom-color: var(--border-color);
+}
+
+body.dark-mode .file-item:hover {
+  background: var(--hover-bg);
+}
+
+body.dark-mode .file-name {
+  color: var(--text-primary);
+}
+
+body.dark-mode .file-meta {
+  color: var(--text-muted);
+}
+
+body.dark-mode .file-remove {
+  color: var(--text-muted);
+}
+
+body.dark-mode .file-remove:hover {
+  background: rgba(231, 76, 60, 0.15);
+  color: #e74c3c;
+}
+
+body.dark-mode .empty-state i,
+body.dark-mode .empty-state p {
+  color: var(--text-muted);
+}
+
+body.dark-mode .empty-hint {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+body.dark-mode .btn-select-file {
+  background: rgba(79, 70, 229, 0.12);
+  color: #a5b4fc;
+  border-color: rgba(79, 70, 229, 0.25);
+}
+
+body.dark-mode .btn-select-file:hover {
+  background: rgba(79, 70, 229, 0.2);
+}
+
+body.dark-mode .btn-select-folder {
+  background: rgba(22, 163, 74, 0.12);
+  color: #86efac;
+  border-color: rgba(22, 163, 74, 0.25);
+}
+
+body.dark-mode .btn-select-folder:hover {
+  background: rgba(22, 163, 74, 0.2);
+}
+
+body.dark-mode .btn-import {
+  background: var(--primary-color);
+}
+
+body.dark-mode .btn-import:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+body.dark-mode .btn-import:disabled {
+  background: var(--border-color);
+  color: var(--text-muted);
+}
+
+/* ID3 弹窗深色模式 */
+body.dark-mode .id3-dialog-content {
+  background: var(--bg-secondary);
+}
+
+body.dark-mode .id3-info-row {
+  border-color: var(--border-color);
+}
+
+body.dark-mode .id3-field input {
+  background: var(--bg-primary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+body.dark-mode .id3-field input:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+}
+
+body.dark-mode .info-icon:hover {
+  color: var(--primary-color);
 }
