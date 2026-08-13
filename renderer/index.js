@@ -505,7 +505,7 @@ const saveId3Tags = () => {
       alert('标签保存成功')
       // 刷新缓存和列表显示
       delete trackMetaCache[currentEditingTrack.path]
-      loadTracksMeta([currentEditingTrack])
+      loadTracksMetaBatch([currentEditingTrack])
       closeId3Edit()
     } else {
       alert('标签保存失败')
