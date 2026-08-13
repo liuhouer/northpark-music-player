@@ -3,6 +3,17 @@ const { $, convertDuration } = require('./helper')
 
 // 读取歌曲标签
 const jsmediatags = require('jsmediatags')
+const musicMetadata = require('music-metadata')
+
+// HTML 转义（用于 title 属性等）
+const escapeHtml = (str) => {
+  if (!str) return ''
+  return str.replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+}
 
 let musicAudio = new Audio()
 musicAudio.preload = 'metadata'
@@ -50,7 +61,11 @@ const restorePlaybackState = (state) => {
   }
 }
 
-// ========================= 渲染歌曲列表 =========================
+// ========================= 虚拟滚动配置 =========================
+const ITEM_HEIGHT = 48
+const VIRTUAL_BUFFER = 10
+let currentRenderedTracks = []
+let virtualScrollBound = false
 let metaLoadedForTracks = null
 
 const getCurrentTracks = () => {
@@ -58,7 +73,52 @@ const getCurrentTracks = () => {
   return playlist ? playlist.tracks : []
 }
 
+// 渲染单行的 HTML（供虚拟滚动调用）
+const renderTrackRowHTML = (track, index) => {
+  const isCurrent = currentTrack && currentTrack.path === track.path
+  const isTrackPlaying = isCurrent && isPlaying
+  const meta = trackMetaCache[track.path] || {}
+  const ext = track.fileName.split('.').pop().toLowerCase()
+  return `
+    <div class="track-row ${isCurrent ? 'playing' : ''}" data-id="${track.id}" data-index="${index}" draggable="true">
+      <div class="drag-handle" title="拖动排序">
+        <i class="fas fa-grip-vertical"></i>
+      </div>
+      <div class="track-index">
+        <span>${index + 1}</span>
+        <i class="fas fa-info-circle info-icon" data-id="${track.id}" title="查看标签信息"></i>
+        <div class="playing-indicator">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+      <div class="track-title">
+        <div class="cover-placeholder" data-cover-id="${track.id}"><i class="fas fa-music"></i></div>
+        <span title="${escapeHtml(track.fileName.replace(/\.(mp3|flac|wav|aac|ogg|m4a)$/i, ''))}">${track.fileName.replace(/\.(mp3|flac|wav|aac|ogg|m4a)$/i, '')}</span>
+      </div>
+      <div class="track-artist" data-artist-id="${track.id}">${meta.artist || '--'}</div>
+      <div class="track-album" data-album-id="${track.id}">${meta.album || '--'}</div>
+      <div class="track-duration" data-duration-id="${track.id}">${meta.duration || '--:--'}</div>
+      <div class="track-actions">
+        <button class="btn-icon btn-play-track" data-id="${track.id}" title="${isTrackPlaying ? '暂停' : '播放'}">
+          <i class="fas ${isTrackPlaying ? 'fa-pause' : 'fa-play'}"></i>
+        </button>
+        <button class="btn-icon btn-edit-tag" data-id="${track.id}" data-ext="${ext}" title="编辑标签">
+          <i class="fas fa-edit"></i>
+        </button>
+        <button class="btn-icon btn-add-to-playlist" data-id="${track.id}" title="添加到歌单">
+          <i class="fas fa-folder-plus"></i>
+        </button>
+        <button class="btn-icon btn-delete-track" data-id="${track.id}" title="${currentPlaylistId === 'all' ? '删除' : '从歌单移除'}">
+          <i class="fas ${currentPlaylistId === 'all' ? 'fa-trash-alt' : 'fa-minus'}"></i>
+        </button>
+      </div>
+    </div>
+  `
+}
+
+// ========================= 渲染歌曲列表（虚拟滚动） =========================
 const renderListHTML = (tracks, skipMeta = false) => {
+  currentRenderedTracks = tracks
   const tracksList = $('tracksList')
   $('song-count').textContent = `${tracks.length} 首歌曲`
 
@@ -79,106 +139,124 @@ const renderListHTML = (tracks, skipMeta = false) => {
     return
   }
 
-  const tracksListHTML = tracks.map((track, index) => {
-    const isCurrent = currentTrack && currentTrack.path === track.path
-    const isTrackPlaying = isCurrent && isPlaying
-    const meta = trackMetaCache[track.path] || {}
-    const ext = track.fileName.split('.').pop().toLowerCase()
-    return `
-      <div class="track-row ${isCurrent ? 'playing' : ''}" data-id="${track.id}" draggable="true">
-        <div class="drag-handle" title="拖动排序">
-          <i class="fas fa-grip-vertical"></i>
-        </div>
-        <div class="track-index">
-          <span>${index + 1}</span>
-          <i class="fas fa-info-circle info-icon" data-id="${track.id}" title="查看标签信息"></i>
-          <div class="playing-indicator">
-            <span></span><span></span><span></span>
-          </div>
-        </div>
-        <div class="track-title">
-          <div class="cover-placeholder" data-cover-id="${track.id}"><i class="fas fa-music"></i></div>
-          <span>${track.fileName.replace(/\.(mp3|flac|wav|aac|ogg|m4a)$/i, '')}</span>
-        </div>
-        <div class="track-artist" data-artist-id="${track.id}">${meta.artist || '--'}</div>
-        <div class="track-album" data-album-id="${track.id}">${meta.album || '--'}</div>
-        <div class="track-duration" data-duration-id="${track.id}">${meta.duration || '--:--'}</div>
-        <div class="track-actions">
-          <button class="btn-icon btn-play-track" data-id="${track.id}" title="${isTrackPlaying ? '暂停' : '播放'}">
-            <i class="fas ${isTrackPlaying ? 'fa-pause' : 'fa-play'}"></i>
-          </button>
-          <button class="btn-icon btn-edit-tag" data-id="${track.id}" data-ext="${ext}" title="编辑标签">
-            <i class="fas fa-edit"></i>
-          </button>
-          <button class="btn-icon btn-add-to-playlist" data-id="${track.id}" title="添加到歌单">
-            <i class="fas fa-folder-plus"></i>
-          </button>
-          <button class="btn-icon btn-delete-track" data-id="${track.id}" title="${currentPlaylistId === 'all' ? '删除' : '从歌单移除'}">
-            <i class="fas ${currentPlaylistId === 'all' ? 'fa-trash-alt' : 'fa-minus'}"></i>
-          </button>
-        </div>
-      </div>
-    `
-  }).join('')
+  const contentBody = document.querySelector('.content-body')
+  const scrollTop = contentBody.scrollTop
+  const viewportHeight = contentBody.clientHeight
 
-  tracksList.innerHTML = `<div class="tracks-list-content">${tracksListHTML}</div>`
+  const startIndex = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - VIRTUAL_BUFFER)
+  const endIndex = Math.min(tracks.length, Math.ceil((scrollTop + viewportHeight) / ITEM_HEIGHT) + VIRTUAL_BUFFER)
 
-  // 绑定事件
-  bindTrackEvents()
-  bindDragEvents()
+  const topSpacer = startIndex * ITEM_HEIGHT
+  const bottomSpacer = (tracks.length - endIndex) * ITEM_HEIGHT
+  const visibleTracks = tracks.slice(startIndex, endIndex)
 
-  // 异步读取元数据（仅当tracks变化时）
-  const tracksKey = tracks.map(t => t.id).join(',')
-  if (!skipMeta && metaLoadedForTracks !== tracksKey && tracks.length > 0) {
-    metaLoadedForTracks = tracksKey
-    loadTracksMeta(tracks)
-  }
+  tracksList.innerHTML = `
+    <div class="tracks-list-content">
+      <div class="virtual-spacer" style="height: ${topSpacer}px"></div>
+      ${visibleTracks.map((track, i) => renderTrackRowHTML(track, startIndex + i)).join('')}
+      <div class="virtual-spacer" style="height: ${bottomSpacer}px"></div>
+    </div>
+  `
+
+  bindVirtualScrollEvents()
+
+  // 按需读取可见歌曲的元数据（不再全量读取）
+  loadVisibleTracksMeta(visibleTracks)
 }
 
-// 批量异步读取歌曲元数据
-const loadTracksMeta = async (tracks) => {
-  const mm = require('music-metadata')
-  for (const track of tracks) {
-    if (trackMetaCache[track.path]) continue // 已缓存则跳过
-    try {
-      const metadata = await mm.parseFile(track.path)
-      const { common, format } = metadata
-      const artist = common.artist || common.artists?.join(', ') || '--'
-      const album = common.album || '--'
-      const duration = format.duration ? convertDuration(format.duration) : '--:--'
-      const durationSec = format.duration || 0
-      const title = common.title || ''
-      const year = common.year ? String(common.year) : ''
-      const genre = common.genre?.[0] || ''
-      const comment = common.comment?.[0]?.text || ''
+// 滚动时更新可见行
+const updateVirtualViewport = () => {
+  if (!currentRenderedTracks.length) return
+  const tracks = currentRenderedTracks
+  const contentBody = document.querySelector('.content-body')
+  const scrollTop = contentBody.scrollTop
+  const viewportHeight = contentBody.clientHeight
 
-      trackMetaCache[track.path] = { artist, album, duration, durationSec, title, year, genre, comment }
+  const startIndex = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - VIRTUAL_BUFFER)
+  const endIndex = Math.min(tracks.length, Math.ceil((scrollTop + viewportHeight) / ITEM_HEIGHT) + VIRTUAL_BUFFER)
 
-      const artistEl = document.querySelector(`[data-artist-id="${track.id}"]`)
-      const albumEl = document.querySelector(`[data-album-id="${track.id}"]`)
-      const durationEl = document.querySelector(`[data-duration-id="${track.id}"]`)
+  const topSpacer = startIndex * ITEM_HEIGHT
+  const bottomSpacer = (tracks.length - endIndex) * ITEM_HEIGHT
+  const visibleTracks = tracks.slice(startIndex, endIndex)
 
-      if (artistEl) artistEl.textContent = artist
-      if (albumEl) albumEl.textContent = album
-      if (durationEl) durationEl.textContent = duration
-    } catch (e) {
-      trackMetaCache[track.path] = { artist: '--', album: '--', duration: '--:--', durationSec: 0, title: '', year: '', genre: '', comment: '' }
-    }
+  const tracksList = $('tracksList')
+  const listContent = tracksList.querySelector('.tracks-list-content')
+  if (!listContent) return
+
+  // 只更新内容，不重建整个容器（保留事件委托绑定）
+  const spacers = listContent.querySelectorAll('.virtual-spacer')
+  if (spacers.length === 2) {
+    spacers[0].style.height = topSpacer + 'px'
+    spacers[1].style.height = bottomSpacer + 'px'
   }
-}
 
-const bindTrackEvents = () => {
-  // 点击整行播放
-  document.querySelectorAll('.track-row').forEach(row => {
-    row.addEventListener('dblclick', (e) => {
-      const id = row.dataset.id
-      if (id) playTrack(id)
-    })
+  const rowsContainer = document.createElement('div')
+  rowsContainer.innerHTML = visibleTracks.map((track, i) => renderTrackRowHTML(track, startIndex + i)).join('')
+
+  // 移除旧的 track-row，插入新的
+  const oldRows = listContent.querySelectorAll('.track-row')
+  oldRows.forEach(row => row.remove())
+
+  const bottomSpacerEl = listContent.querySelector('.virtual-spacer:last-child')
+  const newRows = Array.from(rowsContainer.children)
+  newRows.forEach(row => {
+    listContent.insertBefore(row, bottomSpacerEl)
   })
 
-  // 播放按钮
-  document.querySelectorAll('.btn-play-track').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+  // 滚动后按需读取新可见歌曲的元数据
+  loadVisibleTracksMeta(visibleTracks)
+}
+
+// 按需读取可见歌曲的元数据（避免全量扫描所有文件）
+const loadVisibleTracksMeta = (visibleTracks) => {
+  const uncached = visibleTracks.filter(t => !trackMetaCache[t.path])
+  if (uncached.length > 0) {
+    loadTracksMetaBatch(uncached)
+  }
+}
+
+// 绑定虚拟滚动事件（只执行一次）
+const bindVirtualScrollEvents = () => {
+  if (virtualScrollBound) return
+  virtualScrollBound = true
+
+  const contentBody = document.querySelector('.content-body')
+  let scrollTicking = false
+  contentBody.addEventListener('scroll', () => {
+    if (!scrollTicking) {
+      requestAnimationFrame(() => {
+        updateVirtualViewport()
+        scrollTicking = false
+      })
+      scrollTicking = true
+    }
+  }, { passive: true })
+
+  const tracksList = $('tracksList')
+
+  // 事件委托：双击播放
+  tracksList.addEventListener('dblclick', (e) => {
+    const row = e.target.closest('.track-row')
+    if (row) playTrack(row.dataset.id)
+  })
+
+  // 事件委托：按钮点击
+  tracksList.addEventListener('click', (e) => {
+    const btn = e.target.closest('button')
+    if (!btn) {
+      // info-icon 点击
+      const icon = e.target.closest('.info-icon')
+      if (icon) {
+        e.stopPropagation()
+        const id = icon.dataset.id
+        if (!id) return
+        const track = getCurrentTracks().find(t => t.id === id)
+        if (track) showId3Info(track)
+      }
+      return
+    }
+
+    if (btn.classList.contains('btn-play-track')) {
       e.stopPropagation()
       const id = btn.dataset.id
       if (!id) return
@@ -188,34 +266,13 @@ const bindTrackEvents = () => {
       } else {
         playTrack(id)
       }
-    })
-  })
-
-  // 信息图标：查看 ID3 标签
-  document.querySelectorAll('.info-icon').forEach(icon => {
-    icon.addEventListener('click', (e) => {
-      e.stopPropagation()
-      const id = icon.dataset.id
-      if (!id) return
-      const track = getCurrentTracks().find(t => t.id === id)
-      if (track) showId3Info(track)
-    })
-  })
-
-  // 编辑标签按钮
-  document.querySelectorAll('.btn-edit-tag').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    } else if (btn.classList.contains('btn-edit-tag')) {
       e.stopPropagation()
       const id = btn.dataset.id
       if (!id) return
       const track = getCurrentTracks().find(t => t.id === id)
       if (track) showId3Edit(track)
-    })
-  })
-
-  // 删除按钮
-  document.querySelectorAll('.btn-delete-track').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    } else if (btn.classList.contains('btn-delete-track')) {
       e.stopPropagation()
       const id = btn.dataset.id
       if (!id) return
@@ -224,17 +281,89 @@ const bindTrackEvents = () => {
       } else {
         ipcRenderer.send('remove-from-playlist', { playlistId: currentPlaylistId, trackId: id })
       }
-    })
-  })
-
-  // 添加到歌单按钮
-  document.querySelectorAll('.btn-add-to-playlist').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    } else if (btn.classList.contains('btn-add-to-playlist')) {
       e.stopPropagation()
       const id = btn.dataset.id
-      if (id) showPlaylistMenu(e.target.closest('.btn-add-to-playlist'), id)
-    })
+      if (id) showPlaylistMenu(btn, id)
+    }
   })
+
+  // 拖拽事件委托
+  tracksList.addEventListener('dragstart', handleDragStart)
+  tracksList.addEventListener('dragover', handleDragOver)
+  tracksList.addEventListener('dragleave', handleDragLeave)
+  tracksList.addEventListener('drop', handleDrop)
+  tracksList.addEventListener('dragend', handleDragEnd)
+}
+
+// 分批异步读取歌曲元数据（降低CPU峰值）
+const loadTracksMetaBatch = async (tracks) => {
+  const BATCH_SIZE = 20
+
+  const loadBatch = async (start) => {
+    const end = Math.min(start + BATCH_SIZE, tracks.length)
+    const batch = tracks.slice(start, end)
+
+    for (const track of batch) {
+      if (trackMetaCache[track.path]) continue
+      try {
+        const metadata = await musicMetadata.parseFile(track.path, { skipCovers: true, duration: true })
+        const { common, format } = metadata
+        const artist = common.artist || common.artists?.join(', ') || '--'
+        const album = common.album || '--'
+        const duration = format.duration ? convertDuration(format.duration) : '--:--'
+        const durationSec = format.duration || 0
+        const title = common.title || ''
+        const year = common.year ? String(common.year) : ''
+        const genre = common.genre?.[0] || ''
+        const comment = common.comment?.[0]?.text || ''
+
+        trackMetaCache[track.path] = { artist, album, duration, durationSec, title, year, genre, comment }
+
+        const artistEl = document.querySelector(`[data-artist-id="${track.id}"]`)
+        const albumEl = document.querySelector(`[data-album-id="${track.id}"]`)
+        const durationEl = document.querySelector(`[data-duration-id="${track.id}"]`)
+
+        if (artistEl) artistEl.textContent = artist
+        if (albumEl) albumEl.textContent = album
+        if (durationEl) durationEl.textContent = duration
+      } catch (e) {
+        trackMetaCache[track.path] = { artist: '--', album: '--', duration: '--:--', durationSec: 0, title: '', year: '', genre: '', comment: '' }
+      }
+    }
+
+    if (end < tracks.length) {
+      setTimeout(() => loadBatch(end), 0)
+    }
+  }
+
+  loadBatch(0)
+}
+
+// 局部更新播放状态（避免全量重渲染）
+const updateTrackRowPlayingState = (prevTrack, newTrack) => {
+  if (prevTrack && prevTrack.id !== (newTrack?.id)) {
+    const prevRow = document.querySelector(`.track-row[data-id="${prevTrack.id}"]`)
+    if (prevRow) {
+      prevRow.classList.remove('playing')
+      const btn = prevRow.querySelector('.btn-play-track')
+      if (btn) {
+        btn.title = '播放'
+        btn.innerHTML = '<i class="fas fa-play"></i>'
+      }
+    }
+  }
+  if (newTrack) {
+    const newRow = document.querySelector(`.track-row[data-id="${newTrack.id}"]`)
+    if (newRow) {
+      newRow.classList.add('playing')
+      const btn = newRow.querySelector('.btn-play-track')
+      if (btn) {
+        btn.title = isPlaying ? '暂停' : '播放'
+        btn.innerHTML = `<i class="fas ${isPlaying ? 'fa-pause' : 'fa-play'}"></i>`
+      }
+    }
+  }
 }
 
 // ========================= ID3 标签弹窗 =========================
@@ -248,9 +377,8 @@ const showId3Info = async (track) => {
   // 优先使用缓存，如果没有则实时读取
   let meta = trackMetaCache[track.path]
   if (!meta) {
-    const mm = require('music-metadata')
     try {
-      const metadata = await mm.parseFile(track.path)
+      const metadata = await musicMetadata.parseFile(track.path)
       const { common, format } = metadata
       meta = {
         title: common.title || '',
@@ -470,6 +598,56 @@ const updateProgressHTML = (currentTime, duration) => {
 }
 
 // ========================= 播放控制 =========================
+let prevPlayingTrack = null
+
+// 随机播放队列
+let shuffleQueue = []
+let shuffleIndex = -1
+
+// 生成随机播放队列（Fisher-Yates 洗牌）
+const generateShuffleQueue = (tracks) => {
+  if (!tracks || tracks.length <= 1) {
+    shuffleQueue = tracks ? [...tracks] : []
+    shuffleIndex = -1
+    return
+  }
+  shuffleQueue = [...tracks]
+  for (let i = shuffleQueue.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[shuffleQueue[i], shuffleQueue[j]] = [shuffleQueue[j], shuffleQueue[i]]
+  }
+  // 如果当前有播放歌曲，定位到该歌曲在队列中的位置
+  if (currentTrack) {
+    const idx = shuffleQueue.findIndex(t => t.id === currentTrack.id)
+    shuffleIndex = idx !== -1 ? idx : 0
+  } else {
+    shuffleIndex = 0
+  }
+}
+
+// 随机模式下一首
+const getShuffleNext = () => {
+  if (!shuffleQueue.length) return null
+  shuffleIndex = (shuffleIndex + 1) % shuffleQueue.length
+  return shuffleQueue[shuffleIndex]
+}
+
+// 随机模式上一首
+const getShufflePrev = () => {
+  if (!shuffleQueue.length || shuffleIndex < 0) return null
+  shuffleIndex = (shuffleIndex - 1 + shuffleQueue.length) % shuffleQueue.length
+  return shuffleQueue[shuffleIndex]
+}
+
+// 更新随机队列中的当前位置（手动切歌时调用）
+const updateShuffleIndex = (trackId) => {
+  if (!isRandom || !shuffleQueue.length) return
+  const idx = shuffleQueue.findIndex(t => t.id === trackId)
+  if (idx !== -1) {
+    shuffleIndex = idx
+  }
+}
+
 const playTrack = (id) => {
   const currentTracks = getCurrentTracks()
   const track = currentTracks.find(t => t.id === id)
@@ -481,18 +659,22 @@ const playTrack = (id) => {
     isPlaying = true
     updatePlayButton(true)
     updateCoverRotation(true)
-    renderListHTML(getCurrentTracks(), true) // 刷新列表图标
+    updateTrackRowPlayingState(prevPlayingTrack, currentTrack)
+    prevPlayingTrack = currentTrack
     return
   }
 
   // 播放新歌
+  const oldTrack = currentTrack
   currentTrack = track
   musicAudio.src = track.path
   musicAudio.play()
   isPlaying = true
   updatePlayButton(true)
   updateCoverRotation(true)
-  renderListHTML(getCurrentTracks(), true) // 刷新列表图标
+  updateTrackRowPlayingState(oldTrack, currentTrack)
+  prevPlayingTrack = currentTrack
+  updateShuffleIndex(track.id)
   savePlaybackState()
 }
 
@@ -501,7 +683,7 @@ const pauseTrack = () => {
   isPlaying = false
   updatePlayButton(false)
   updateCoverRotation(false)
-  renderListHTML(getCurrentTracks(), true) // 刷新列表图标
+  updateTrackRowPlayingState(null, currentTrack)
 }
 
 // ========================= 封面与标签读取 =========================
@@ -694,17 +876,21 @@ musicAudio.addEventListener('timeupdate', () => {
 
 musicAudio.addEventListener('ended', async () => {
   const currentTracks = getCurrentTracks()
+  const oldTrack = currentTrack
   if (isLooping) {
     musicAudio.currentTime = 0
     musicAudio.play()
     await loadLrc()
   } else if (isRandom) {
-    const randomIndex = Math.floor(Math.random() * currentTracks.length)
-    currentTrack = currentTracks[randomIndex]
-    musicAudio.src = currentTrack.path
-    musicAudio.play()
-    renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
-    renderListHTML(getCurrentTracks())
+    const nextTrack = getShuffleNext()
+    if (nextTrack) {
+      currentTrack = nextTrack
+      musicAudio.src = currentTrack.path
+      musicAudio.play()
+      renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
+      updateTrackRowPlayingState(oldTrack, currentTrack)
+      prevPlayingTrack = currentTrack
+    }
   } else {
     const currentIndex = currentTracks.findIndex(track => track.id === currentTrack.id)
     const nextIndex = (currentIndex + 1) % currentTracks.length
@@ -712,7 +898,8 @@ musicAudio.addEventListener('ended', async () => {
     musicAudio.src = currentTrack.path
     musicAudio.play()
     renderPlayerHTML(currentTrack.fileName, musicAudio.duration)
-    renderListHTML(getCurrentTracks())
+    updateTrackRowPlayingState(oldTrack, currentTrack)
+    prevPlayingTrack = currentTrack
   }
 })
 
@@ -720,7 +907,8 @@ musicAudio.addEventListener('play', () => {
   isPlaying = true
   updatePlayButton(true)
   updateCoverRotation(true)
-  renderListHTML(getCurrentTracks(), true)
+  updateTrackRowPlayingState(prevPlayingTrack, currentTrack)
+  prevPlayingTrack = currentTrack
   const title = currentTrack ? currentTrack.fileName.replace(/\.(mp3|flac|wav|aac|ogg|m4a)$/i, '') : ''
   ipcRenderer.send('playback-status-changed', { isPlaying: true, title })
 })
@@ -729,7 +917,7 @@ musicAudio.addEventListener('pause', () => {
   isPlaying = false
   updatePlayButton(false)
   updateCoverRotation(false)
-  renderListHTML(getCurrentTracks(), true)
+  updateTrackRowPlayingState(null, currentTrack)
   const title = currentTrack ? currentTrack.fileName.replace(/\.(mp3|flac|wav|aac|ogg|m4a)$/i, '') : ''
   ipcRenderer.send('playback-status-changed', { isPlaying: false, title })
 })
@@ -753,18 +941,28 @@ $('play-pause-button').addEventListener('click', () => {
 $('previous-button').addEventListener('click', () => {
   const currentTracks = getCurrentTracks()
   if (!currentTracks || !currentTracks.length || !currentTrack) return
-  const currentIndex = currentTracks.findIndex(track => track.id === currentTrack.id)
-  const previousIndex = (currentIndex - 1 + currentTracks.length) % currentTracks.length
-  playTrack(currentTracks[previousIndex].id)
+  if (isRandom) {
+    const prevTrack = getShufflePrev()
+    if (prevTrack) playTrack(prevTrack.id)
+  } else {
+    const currentIndex = currentTracks.findIndex(track => track.id === currentTrack.id)
+    const previousIndex = (currentIndex - 1 + currentTracks.length) % currentTracks.length
+    playTrack(currentTracks[previousIndex].id)
+  }
 })
 
 // 下一曲
 $('next-button').addEventListener('click', () => {
   const currentTracks = getCurrentTracks()
   if (!currentTracks || !currentTracks.length || !currentTrack) return
-  const currentIndex = currentTracks.findIndex(track => track.id === currentTrack.id)
-  const nextIndex = (currentIndex + 1) % currentTracks.length
-  playTrack(currentTracks[nextIndex].id)
+  if (isRandom) {
+    const nextTrack = getShuffleNext()
+    if (nextTrack) playTrack(nextTrack.id)
+  } else {
+    const currentIndex = currentTracks.findIndex(track => track.id === currentTrack.id)
+    const nextIndex = (currentIndex + 1) % currentTracks.length
+    playTrack(currentTracks[nextIndex].id)
+  }
 })
 
 // 停止
@@ -862,10 +1060,18 @@ randomButton.addEventListener('click', () => {
   isRandom = !isRandom
   randomButton.classList.toggle('active', isRandom)
   ipcRenderer.send('isRandom', isRandom)
-  if (isRandom && isLooping) {
-    isLooping = false
-    loopButton.classList.remove('active')
-    ipcRenderer.send('isLooping', false)
+  if (isRandom) {
+    // 开启随机时生成队列
+    generateShuffleQueue(getCurrentTracks())
+    if (isLooping) {
+      isLooping = false
+      loopButton.classList.remove('active')
+      ipcRenderer.send('isLooping', false)
+    }
+  } else {
+    // 关闭随机时清空队列
+    shuffleQueue = []
+    shuffleIndex = -1
   }
 })
 
@@ -948,8 +1154,7 @@ ipcRenderer.on('DarkStatus', (event, isOpen) => {
 
 // ========================= 网易云API =========================
 const fetchSongInfo = async () => {
-  const mm = require('music-metadata')
-  const metadata = await mm.parseFile(currentTrack.path)
+  const metadata = await musicMetadata.parseFile(currentTrack.path)
   const { common } = metadata
   const songTitle = common.title || currentTrack.fileName.replace(/\.mp3$/i, '')
   const artistName = common.artist || ''
@@ -1124,6 +1329,8 @@ const switchPlaylist = (id) => {
 
   // 重新渲染列表
   renderListHTML(getCurrentTracks())
+  // 切换歌单后重置随机队列
+  if (isRandom) generateShuffleQueue(getCurrentTracks())
 }
 
 // ========================= 拖拽排序 =========================
@@ -1294,29 +1501,34 @@ const hidePlaylistDialog = () => {
   editingPlaylistId = null
 }
 
-// 定位当前歌曲
+// 定位当前歌曲（仅在当前歌单内查找，不切换歌单）
 const locateCurrentTrack = () => {
   if (!currentTrack) return
+
+  const tracks = getCurrentTracks()
+  const trackIndex = tracks.findIndex(t => t.id === currentTrack.id)
+  if (trackIndex === -1) return
+
+  // 计算目标滚动位置，使歌曲进入虚拟视口
+  const contentBody = document.querySelector('.content-body')
+  const targetScrollTop = trackIndex * ITEM_HEIGHT
+  contentBody.scrollTop = targetScrollTop
+
+  // 同步更新虚拟视口，确保目标行渲染到 DOM 中
+  updateVirtualViewport()
+
+  // 现在目标行应该在 DOM 中
   const row = document.querySelector(`.track-row[data-id="${currentTrack.id}"]`)
-  if (!row) {
-    // 如果不在当前视图，切换到全部歌曲再试
-    if (currentPlaylistId !== 'all') {
-      switchPlaylist('all')
-      setTimeout(() => {
-        const r = document.querySelector(`.track-row[data-id="${currentTrack.id}"]`)
-        if (r) r.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      }, 100)
-    }
-    return
+  if (row) {
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    // 高亮闪烁效果
+    row.style.transition = 'none'
+    row.style.background = 'var(--active-bg)'
+    setTimeout(() => {
+      row.style.transition = ''
+      row.style.background = ''
+    }, 800)
   }
-  row.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  // 高亮闪烁效果
-  row.style.transition = 'none'
-  row.style.background = 'var(--active-bg)'
-  setTimeout(() => {
-    row.style.transition = ''
-    row.style.background = ''
-  }, 800)
 }
 
 // ========================= 歌单事件绑定 =========================
@@ -1371,6 +1583,8 @@ ipcRenderer.on('playlists-data', (event, data) => {
   playlists = data
   renderPlaylists()
   renderListHTML(getCurrentTracks())
+  // 歌单变化后重置随机队列
+  if (isRandom) generateShuffleQueue(getCurrentTracks())
   // 如果有待恢复的播放状态，执行恢复
   if (pendingPlaybackState) {
     restorePlaybackState(pendingPlaybackState)
@@ -1382,6 +1596,8 @@ ipcRenderer.on('playlists-updated', (event, updatedPlaylists) => {
   playlists = updatedPlaylists
   renderPlaylists()
   renderListHTML(getCurrentTracks())
+  // 歌单变化后重置随机队列
+  if (isRandom) generateShuffleQueue(getCurrentTracks())
 })
 
 ipcRenderer.on('playback-state', (event, state) => {
@@ -1411,19 +1627,23 @@ ipcRenderer.on('open-external-file', (event, filePath) => {
 
 // ========================= 修改现有事件 =========================
 
-// 修改搜索，在当前歌单内搜索
+// 修改搜索，在当前歌单内搜索（带防抖）
 const searchInput = document.getElementById('search-input')
+let searchDebounceTimer = null
 if (searchInput) {
   searchInput.addEventListener('input', (e) => {
-    const keyword = e.target.value.trim().toLowerCase()
-    if (!keyword) {
-      renderListHTML(getCurrentTracks())
-      return
-    }
-    const filtered = getCurrentTracks().filter(track =>
-      track.fileName.toLowerCase().includes(keyword)
-    )
-    renderListHTML(filtered)
+    clearTimeout(searchDebounceTimer)
+    searchDebounceTimer = setTimeout(() => {
+      const keyword = e.target.value.trim().toLowerCase()
+      if (!keyword) {
+        renderListHTML(getCurrentTracks())
+        return
+      }
+      const filtered = getCurrentTracks().filter(track =>
+        track.fileName.toLowerCase().includes(keyword)
+      )
+      renderListHTML(filtered)
+    }, 150)
   })
 }
 
@@ -1446,9 +1666,14 @@ ipcRenderer.on('tray-play-pause', () => {
 ipcRenderer.on('tray-next', () => {
   const currentTracks = getCurrentTracks()
   if (!currentTracks || !currentTracks.length || !currentTrack) return
-  const currentIndex = currentTracks.findIndex(track => track.id === currentTrack.id)
-  const nextIndex = (currentIndex + 1) % currentTracks.length
-  playTrack(currentTracks[nextIndex].id)
+  if (isRandom) {
+    const nextTrack = getShuffleNext()
+    if (nextTrack) playTrack(nextTrack.id)
+  } else {
+    const currentIndex = currentTracks.findIndex(track => track.id === currentTrack.id)
+    const nextIndex = (currentIndex + 1) % currentTracks.length
+    playTrack(currentTracks[nextIndex].id)
+  }
 })
 
 // ========================= 设为默认播放器 =========================
