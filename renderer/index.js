@@ -1154,10 +1154,39 @@ ipcRenderer.on('DarkStatus', (event, isOpen) => {
 
 // ========================= 网易云API =========================
 const fetchSongInfo = async () => {
-  const metadata = await musicMetadata.parseFile(currentTrack.path)
-  const { common } = metadata
-  const songTitle = common.title || currentTrack.fileName.replace(/\.mp3$/i, '')
-  const artistName = common.artist || ''
+  let songTitle = ''
+  let artistName = ''
+
+  // 1. 优先从已缓存的元数据获取
+  const cached = trackMetaCache[currentTrack.path]
+  if (cached) {
+    songTitle = cached.title || ''
+    artistName = (cached.artist && cached.artist !== '--') ? cached.artist : ''
+  }
+
+  // 2. 缓存没有或信息不全，尝试用 jsmediatags 轻量读取
+  if (!songTitle || !artistName) {
+    try {
+      const tags = await new Promise((resolve, reject) => {
+        jsmediatags.read(currentTrack.path, {
+          onSuccess: (tag) => resolve(tag.tags),
+          onError: (error) => reject(error)
+        })
+      })
+      if (tags) {
+        if (!songTitle) songTitle = tags.title || ''
+        if (!artistName) artistName = tags.artist || ''
+      }
+    } catch (e) {
+      // 静默失败，继续用文件名兜底
+    }
+  }
+
+  // 3. 标签拿不到，通过文件名截取
+  if (!songTitle) {
+    songTitle = currentTrack.fileName.replace(/\.(mp3|flac|wav|aac|ogg|m4a)$/i, '')
+  }
+
   const songInfo = await getSong(songTitle, artistName)
   return songInfo
 }
