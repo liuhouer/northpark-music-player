@@ -93,7 +93,7 @@
           ]
         }
       ],
-      "icon": "build/icon256.ico",
+      "icon": "build/icon.ico",
       "publisherName": "northpark.cn"
     },
     "msi": {
@@ -112,15 +112,15 @@
         "name": "Audio File",
         "description": "Audio file",
         "role": "Editor",
-        "icon": "build/icon256.ico"
+        "icon": "build/icon.ico"
       }
     ],
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": "build/icon256.ico",
-      "uninstallerIcon": "build/icon256.ico",
-      "installerHeaderIcon": "build/icon256.ico",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Northpark Music Player",
